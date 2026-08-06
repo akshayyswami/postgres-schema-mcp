@@ -1,0 +1,33 @@
+# One `docker compose up` brings up Postgres seeded with AdventureWorks and both
+# roles. The MCP server is not containerised on purpose: it is normally launched
+# over stdio by the MCP client, so a container would be in the way.
+services:
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pg-schema-scout/adventureworks:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: adventureworks
+    ports:
+      - "${PGSS_PORT:-55432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # The seed runs as part of first-boot init and takes a while, so the check
+      # is for the data being there, not merely for the server accepting
+      # connections. 68 base tables across the five real schemas.
+      test:
+        [
+          "CMD-SHELL",
+          "psql -U postgres -d adventureworks -tAc \"SELECT count(*) = 68 FROM information_schema.tables WHERE table_type='BASE TABLE' AND table_schema IN ('person','humanresources','production','purchasing','sales')\" | grep -q t",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 180s
+
+volumes:
+  pgdata:
