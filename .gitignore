@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Seed data is downloaded at image build time, never committed.
+init/data/
+*.zip
+*.csv
+
+.env
+.DS_Store

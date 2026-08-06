@@ -1,0 +1,79 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pg-schema-scout"
+version = "0.1.0"
+description = "An MCP server that retrieves the relevant slice of a wide Postgres schema instead of dumping all of it, with read-only enforced in three layers."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Akshay Swaminathan" }]
+keywords = ["mcp", "model-context-protocol", "postgres", "retrieval", "sql"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+]
+
+dependencies = [
+    # Pinned exactly. The v1 line continues in parallel, so an unpinned install
+    # can land on either major version, and the two APIs are not compatible.
+    "mcp==2.0.0",
+    "sqlglot>=30.0,<31",
+    "psycopg[binary,pool]>=3.2,<4",
+    "rank-bm25>=0.2.2,<0.3",
+    "PyYAML>=6.0,<7",
+    "tiktoken>=0.9,<1",
+]
+
+[project.optional-dependencies]
+# Amazon Titan Text Embeddings V2 via Bedrock. Optional so the repo runs
+# offline with no credentials; BM25 is the default backend.
+bedrock = ["boto3>=1.35"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "types-PyYAML>=6.0",
+    "boto3-stubs[bedrock-runtime]>=1.35",
+]
+
+[project.scripts]
+pg-schema-scout = "pg_schema_scout.server:main"
+
+[project.urls]
+Homepage = "https://github.com/AkshaySwami14/pg-schema-scout"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pg_schema_scout"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests", "evals"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["pg_schema_scout"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+# Neither ships type information.
+module = ["rank_bm25.*", "tiktoken.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "db: test requires the seeded Postgres from docker-compose (deselect with -m 'not db')",
+]
