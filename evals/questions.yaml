@@ -1,0 +1,127 @@
+# Retrieval evaluation set.
+#
+# Derived from the seeded AdventureWorks schema after it was up, not from
+# guesswork: every table named below exists, and the sets were checked against
+# the actual foreign keys.
+#
+# `tables` is the minimal set a correct answer needs. Lookup tables that merely
+# decorate the answer are left out; if an answer genuinely cannot be produced
+# without a join, the joined table is included. This is what precision and
+# recall at k are measured against, so being sloppy here would make the numbers
+# meaningless in either direction.
+
+questions:
+  - id: top-orders-by-value
+    question: Which sales orders had the highest total due in 2013?
+    tables: [sales.salesorderheader]
+
+  - id: order-line-items
+    question: What products were on each sales order, with quantities and unit prices?
+    tables: [sales.salesorderdetail, production.product]
+
+  - id: employee-pay-changes
+    question: Which employees have had their pay rate changed, and when?
+    tables: [humanresources.employee, humanresources.employeepayhistory]
+
+  - id: employee-department-moves
+    question: Which departments has each employee worked in over time?
+    tables:
+      [
+        humanresources.employee,
+        humanresources.employeedepartmenthistory,
+        humanresources.department,
+      ]
+
+  - id: product-list-price-by-subcategory
+    question: What is the current list price of each product and which subcategory is it in?
+    tables: [production.product, production.productsubcategory]
+
+  - id: revenue-by-category
+    question: Which product categories generate the most revenue?
+    tables:
+      [
+        sales.salesorderdetail,
+        production.product,
+        production.productsubcategory,
+        production.productcategory,
+      ]
+
+  - id: reseller-locations
+    question: Who are our reseller stores and where are they located?
+    tables: [sales.store, person.businessentityaddress, person.address]
+
+  - id: vendor-supplied-products
+    question: Which vendors supply which products, and what is the average lead time?
+    tables: [purchasing.productvendor, purchasing.vendor, production.product]
+
+  - id: purchase-orders-by-vendor
+    question: What purchase orders did we place with each vendor last year?
+    tables: [purchasing.purchaseorderheader, purchasing.vendor]
+
+  - id: purchase-order-lines
+    question: What items were on each purchase order and what did they cost?
+    tables: [purchasing.purchaseorderdetail, production.product]
+
+  - id: salesperson-vs-quota
+    question: How did each salesperson perform against their sales quota?
+    tables: [sales.salesperson, sales.salespersonquotahistory]
+
+  - id: territory-performance
+    question: Which sales territories have the highest year to date sales?
+    tables: [sales.salesterritory]
+
+  - id: territory-transfers
+    question: How have sales representatives moved between territories?
+    tables: [sales.salesterritoryhistory, sales.salesperson, sales.salesterritory]
+
+  - id: purchase-reasons
+    question: What reasons did customers give for their purchases?
+    tables: [sales.salesreason, sales.salesorderheadersalesreason]
+
+  - id: customer-credit-cards
+    question: Which people have a credit card on file and what type is it?
+    tables: [sales.personcreditcard, sales.creditcard, person.person]
+
+  - id: person-contact-details
+    question: What is the email address and telephone number for a given person?
+    tables: [person.person, person.emailaddress, person.personphone]
+
+  - id: product-reviews
+    question: Which products have customer reviews and what ratings did reviewers give?
+    tables: [production.productreview, production.product]
+
+  - id: inventory-by-location
+    question: How much stock of each product is held at each inventory location?
+    tables: [production.productinventory, production.location, production.product]
+
+  - id: bill-of-materials
+    question: What component parts are required to assemble a given bicycle?
+    tables: [production.billofmaterials, production.product]
+
+  - id: list-price-over-time
+    question: How has the list price of each product changed over time?
+    tables: [production.productlistpricehistory, production.product]
+
+  - id: cost-over-time
+    question: How has the standard cost of each product changed over time?
+    tables: [production.productcosthistory, production.product]
+
+  - id: scrapped-work-orders
+    question: Which manufacturing work orders had scrapped units, and what was the reason?
+    tables: [production.workorder, production.scrapreason]
+
+  - id: discounts-applied
+    question: What special offer discounts were applied to sales order line items?
+    tables: [sales.specialoffer, sales.specialofferproduct, sales.salesorderdetail]
+
+  - id: currency-exchange-rates
+    question: What currency exchange rates apply for international sales?
+    tables: [sales.currencyrate, sales.currency]
+
+  - id: shipping-methods
+    question: What shipping methods can we use and what do they charge?
+    tables: [purchasing.shipmethod]
+
+  - id: job-applicants
+    question: What resumes have job applicants submitted to human resources?
+    tables: [humanresources.jobcandidate]

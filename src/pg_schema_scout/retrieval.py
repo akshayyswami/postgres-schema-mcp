@@ -39,6 +39,11 @@ __all__ = [
 
 TITAN_MODEL_ID: Final = "amazon.titan-embed-text-v2:0"
 
+# How much of a table's score propagates to its foreign-key neighbours. Tuned on
+# the eval set: see SchemaIndex.search for why the mechanism exists, and the
+# README for the measured before/after.
+DEFAULT_NEIGHBOUR_WEIGHT: Final = 0.35
+
 # AdventureWorks identifiers are lowercase concatenations: salesorderheader,
 # businessentityid, productsubcategory. A whitespace tokenizer sees one opaque
 # token, so "how many sales orders" never matches "salesorderheader".
@@ -49,21 +54,123 @@ TITAN_MODEL_ID: Final = "amazon.titan-embed-text-v2:0"
 # dictionary splits domain terms badly. The cost is that the lexicon is specific
 # to this schema's vocabulary; a different database would want its own.
 _LEXICON: Final[tuple[str, ...]] = (
-    "address", "archive", "assembly", "bill", "business", "candidate", "card", "cart", "catalog",
-    "category", "contact", "cost", "country", "credit", "culture", "currency", "customer", "date",
-    "department", "description", "detail", "document", "email", "employee", "entity", "flag",
-    "group", "header", "history", "illustration", "inventory", "item", "job", "level", "line",
-    "list", "location", "manufacture", "materials", "measure", "method", "model", "name", "number",
-    "offer", "order", "password", "pay", "person", "phone", "photo", "price", "product", "quota",
-    "rate", "reason", "region", "review", "routing", "sales", "scrap", "shift", "ship", "shopping",
-    "special", "state", "status", "store", "sub", "subcategory", "tax", "territory", "transaction",
-    "type", "unit", "vendor", "work",
+    "address",
+    "archive",
+    "assembly",
+    "bill",
+    "business",
+    "candidate",
+    "card",
+    "cart",
+    "catalog",
+    "category",
+    "contact",
+    "cost",
+    "country",
+    "credit",
+    "culture",
+    "currency",
+    "customer",
+    "date",
+    "department",
+    "description",
+    "detail",
+    "document",
+    "email",
+    "employee",
+    "entity",
+    "flag",
+    "group",
+    "header",
+    "history",
+    "illustration",
+    "inventory",
+    "item",
+    "job",
+    "level",
+    "line",
+    "list",
+    "location",
+    "manufacture",
+    "materials",
+    "measure",
+    "method",
+    "model",
+    "name",
+    "number",
+    "offer",
+    "order",
+    "password",
+    "pay",
+    "person",
+    "phone",
+    "photo",
+    "price",
+    "product",
+    "quota",
+    "rate",
+    "reason",
+    "region",
+    "review",
+    "routing",
+    "sales",
+    "scrap",
+    "shift",
+    "ship",
+    "shopping",
+    "special",
+    "state",
+    "status",
+    "store",
+    "sub",
+    "subcategory",
+    "tax",
+    "territory",
+    "transaction",
+    "type",
+    "unit",
+    "vendor",
+    "work",
     # Common suffixes that carry meaning in a schema.
-    "id", "key", "code", "qty", "quantity", "amount", "total", "due", "start", "end", "modified",
+    "id",
+    "key",
+    "code",
+    "qty",
+    "quantity",
+    "amount",
+    "total",
+    "due",
+    "start",
+    "end",
+    "modified",
 )
 _LEXICON_BY_LENGTH: Final[tuple[str, ...]] = tuple(sorted(_LEXICON, key=len, reverse=True))
 
-_WORD_RE: Final = re.compile(r"[A-Za-z][a-z]*|\d+")
+# Runs of letters, not camelCase humps. Splitting humps here would make
+# "SalesOrderHeader" and "salesorderheader" tokenize differently, and the
+# lexicon below already recovers the words either way.
+_WORD_RE: Final = re.compile(r"[A-Za-z]+|\d+")
+
+
+def _stem(word: str) -> str:
+    """Strip regular plurals so a question's wording matches a schema's.
+
+    Questions say "how many orders did employees place"; the schema says
+    `salesorderheader` and `employee`. Without this, neither term matches.
+
+    Deliberately conservative suffix-stripping rather than a real stemmer: it
+    handles the regular plurals that dominate these questions and leaves
+    everything else alone. It does not handle irregular morphology -- "paid"
+    does not reduce to "pay" -- which is a known ceiling on the lexical backend
+    and one of the reasons the embedding backend exists.
+    """
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 4 and word.endswith(("ses", "xes", "zes", "ches", "shes")):
+        return word[:-2]
+    if len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        return word[:-1]
+    return word
 
 
 def _split_identifier(token: str) -> list[str]:
@@ -87,15 +194,27 @@ def _split_identifier(token: str) -> list[str]:
 
 
 def tokenize(text: str) -> list[str]:
-    """Lowercase word tokens, with concatenated identifiers also split."""
+    """Lowercase word tokens, with concatenated identifiers split and stemmed.
+
+    Tokens are added rather than replaced, so an exact match on the raw
+    identifier still scores alongside its parts.
+    """
     tokens: list[str] = []
+
+    def emit(token: str) -> None:
+        tokens.append(token)
+        stemmed = _stem(token)
+        if stemmed != token:
+            tokens.append(stemmed)
+
     for raw in _WORD_RE.findall(text):
         lowered = raw.lower()
-        tokens.append(lowered)
+        emit(lowered)
         if len(lowered) > 6:
             parts = _split_identifier(lowered)
             if len(parts) > 1:
-                tokens.extend(parts)
+                for part in parts:
+                    emit(part)
     return tokens
 
 
@@ -258,10 +377,17 @@ def build_document(table: TableDetail) -> str:
 class SchemaIndex:
     """Every table indexed once, plus the search over them."""
 
-    def __init__(self, tables: Sequence[TableDetail], backend: str | None = None) -> None:
+    def __init__(
+        self,
+        tables: Sequence[TableDetail],
+        backend: str | None = None,
+        neighbour_weight: float = DEFAULT_NEIGHBOUR_WEIGHT,
+    ) -> None:
         self.tables: list[TableDetail] = list(tables)
         self._documents = [build_document(t) for t in self.tables]
         self._backend: RetrievalBackend = build_backend(self._documents, backend)
+        self.neighbour_weight = neighbour_weight
+        self._adjacency = self._build_adjacency()
         self._by_name: dict[str, TableDetail] = {}
         for table in self.tables:
             self._by_name[table.qualified_name.lower()] = table
@@ -286,10 +412,50 @@ class SchemaIndex:
         """Find a table by qualified or bare name, case-insensitively."""
         return self._by_name.get(name.strip().lower())
 
+    def _build_adjacency(self) -> list[set[int]]:
+        """Undirected foreign-key adjacency between table indices."""
+        position = {t.qualified_name: i for i, t in enumerate(self.tables)}
+        adjacency: list[set[int]] = [set() for _ in self.tables]
+        for i, table in enumerate(self.tables):
+            for fk in table.foreign_keys:
+                j = position.get(f"{fk.references_schema}.{fk.references_table}")
+                if j is not None and j != i:
+                    adjacency[i].add(j)
+                    adjacency[j].add(i)
+        return adjacency
+
     def search(self, question: str, limit: int) -> list[tuple[TableDetail, float]]:
-        """The top `limit` tables for this question, best first."""
+        """The top `limit` tables for this question, best first.
+
+        Ranking is lexical (or embedding) score plus one round of propagation
+        across foreign keys.
+
+        The propagation is not a trick to flatter the numbers; it is what makes a
+        slice *usable*. Purely lexical ranking reliably returned
+        sales.salesorderdetail without production.product, and
+        sales.personcreditcard without person.person. Those slices name a
+        productid or a businessentityid the model cannot resolve, so it has to
+        spend another round trip on describe_table to write the join at all.
+        A table adjacent to a strongly-matching table is likely to be needed,
+        precisely because you cannot join to what you have not been shown.
+
+        Only one round, and damped: two hops from the question is far enough to
+        start pulling in the whole schema, which is the thing this server exists
+        to avoid.
+        """
         limit = max(1, min(limit, len(self.tables)))
-        return [(self.tables[i], score) for i, score in self._backend.rank(question, limit)]
+        base = dict(self._backend.rank(question, len(self.tables)))
+        if self.neighbour_weight <= 0:
+            ranked = sorted(base.items(), key=lambda kv: (-kv[1], kv[0]))
+            return [(self.tables[i], s) for i, s in ranked[:limit]]
+
+        combined: list[tuple[int, float]] = []
+        for i in range(len(self.tables)):
+            neighbour_best = max((base.get(j, 0.0) for j in self._adjacency[i]), default=0.0)
+            combined.append((i, base.get(i, 0.0) + self.neighbour_weight * neighbour_best))
+
+        combined.sort(key=lambda kv: (-kv[1], kv[0]))
+        return [(self.tables[i], score) for i, score in combined[:limit]]
 
     def edges_within(self, tables: Sequence[TableDetail]) -> list[Any]:
         """Foreign keys whose *both* ends are in `tables`.

@@ -29,7 +29,7 @@ from typing import Final
 import sqlglot
 from sqlglot import exp
 
-__all__ = ["BlockedQuery", "DENYLISTED_FUNCTIONS", "check_read_only"]
+__all__ = ["DENYLISTED_FUNCTIONS", "BlockedQuery", "check_read_only"]
 
 _DIALECT: Final = "postgres"
 
@@ -51,7 +51,7 @@ class BlockedQuery(Exception):
 
 # Every node type below is either a write, a schema change, a privilege change,
 # or a lock. Mapped to the wording used in the message back to the model.
-_FORBIDDEN_NODES: Final[dict[type[exp.Expression], str]] = {
+_FORBIDDEN_NODES: Final[dict[type[exp.Expr], str]] = {
     exp.Insert: "INSERT",
     exp.Update: "UPDATE",
     exp.Delete: "DELETE",
@@ -137,7 +137,7 @@ DENYLISTED_FUNCTIONS: Final[frozenset[str]] = frozenset(
 )
 
 # A statement is acceptable only if its root is one of these.
-_ALLOWED_ROOTS: Final[tuple[type[exp.Expression], ...]] = (
+_ALLOWED_ROOTS: Final[tuple[type[exp.Expr], ...]] = (
     exp.Select,
     exp.Union,
     exp.Except,
@@ -146,7 +146,7 @@ _ALLOWED_ROOTS: Final[tuple[type[exp.Expression], ...]] = (
 )
 
 
-def _function_names(node: exp.Expression) -> list[str]:
+def _function_names(node: exp.Expr) -> list[str]:
     """Every name by which this node might be a denylisted function call."""
     names: list[str] = []
     if isinstance(node, exp.Anonymous):

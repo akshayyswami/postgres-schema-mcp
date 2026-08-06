@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ruff + mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,bedrock]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+
+  test:
+    name: pytest + evals
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,bedrock]"
+
+      # Unit tests first, without a database. If the guard is broken, that
+      # should be visible before spending four minutes seeding Postgres.
+      - name: Unit tests (no database)
+        run: pytest -q -m "not db"
+
+      - name: Fault matrix (no database)
+        run: python evals/run_evals.py --no-db
+
+      - name: Start seeded Postgres
+        run: docker compose up -d --wait --wait-timeout 900
+
+      - name: Show seed summary
+        run: |
+          docker compose exec -T db psql -U postgres -d adventureworks -c \
+            "SELECT table_schema, count(*) FROM information_schema.tables
+             WHERE table_type='BASE TABLE'
+               AND table_schema IN ('person','humanresources','production','purchasing','sales')
+             GROUP BY 1 ORDER BY 1;"
+
+      # Includes test_readonly_role.py, which proves the database refuses writes
+      # on its own, without help from the parser.
+      - name: Full test suite
+        run: pytest -q
+
+      - name: Evals (fault matrix + retrieval)
+        run: python evals/run_evals.py
+
+      - name: Context measurement
+        run: python evals/measure_context.py
+
+      - name: Database logs on failure
+        if: failure()
+        run: docker compose logs db | tail -100

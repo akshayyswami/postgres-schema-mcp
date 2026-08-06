@@ -59,10 +59,10 @@ policy and, independently, by a database role that holds only SELECT.
 # from an untrusted server as untrusted, which is correct and is why the real
 # enforcement is guard.py and the scout_ro role rather than this line.
 READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 
 mcp = MCPServer(
@@ -203,9 +203,7 @@ async def describe_table(name: str) -> TableDetail:
     table = index.lookup(name)
     if table is None:
         wanted = name.strip().lower()
-        close = sorted(
-            (t.qualified_name for t in index.tables if wanted in t.qualified_name.lower())
-        )[:8]
+        close = sorted(t.qualified_name for t in index.tables if wanted in t.qualified_name.lower())[:8]
         hint = f" Close matches: {', '.join(close)}." if close else ""
         raise ToolError(
             f"No table named {name!r} in the indexed schemas "

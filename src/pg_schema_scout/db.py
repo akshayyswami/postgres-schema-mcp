@@ -239,22 +239,22 @@ class Database:
         The caller is responsible for having passed `sql` through guard.py first.
         """
         limit = max(1, min(max_rows, self.settings.max_rows_cap))
-        async with self.pool.connection() as conn:
-            # Explicit read-only transaction, on top of the session default.
-            async with conn.transaction(), conn.cursor() as cur:
-                await cur.execute(psycopg.sql.SQL(sql))  # type: ignore[arg-type]
-                if cur.description is None:
-                    return QueryResult(
-                        columns=[],
-                        rows=[],
-                        row_count=0,
-                        truncated=False,
-                        note="The statement returned no result set.",
-                    )
-                columns = [d.name for d in cur.description]
-                # Fetch one extra row: that is how truncation is detected without
-                # a second COUNT query.
-                fetched = await cur.fetchmany(limit + 1)
+        # conn.transaction() is an explicit read-only transaction, on top of the
+        # session-level default_transaction_read_only.
+        async with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await cur.execute(psycopg.sql.SQL(sql))
+            if cur.description is None:
+                return QueryResult(
+                    columns=[],
+                    rows=[],
+                    row_count=0,
+                    truncated=False,
+                    note="The statement returned no result set.",
+                )
+            columns = [d.name for d in cur.description]
+            # Fetch one extra row: that is how truncation is detected without
+            # a second COUNT query.
+            fetched = await cur.fetchmany(limit + 1)
 
         truncated = len(fetched) > limit
         rows = [[_jsonable(v) for v in row] for row in fetched[:limit]]
@@ -266,14 +266,12 @@ class Database:
                 "with GROUP BY, or raise max_rows (capped at "
                 f"{self.settings.max_rows_cap})."
             )
-        return QueryResult(
-            columns=columns, rows=rows, row_count=len(rows), truncated=truncated, note=note
-        )
+        return QueryResult(columns=columns, rows=rows, row_count=len(rows), truncated=truncated, note=note)
 
     async def explain(self, sql: str) -> QueryPlan:
         """EXPLAIN a guarded SELECT. Never ANALYZE, so the query does not run."""
         async with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
-            await cur.execute(psycopg.sql.SQL(f"EXPLAIN (FORMAT JSON) {sql}"))  # type: ignore[arg-type]
+            await cur.execute(psycopg.sql.SQL(f"EXPLAIN (FORMAT JSON) {sql}"))
             row = await cur.fetchone()
 
         payload: Any = row[0] if row else None
@@ -282,7 +280,7 @@ class Database:
             top = payload[0].get("Plan", {})
 
         async with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
-            await cur.execute(psycopg.sql.SQL(f"EXPLAIN {sql}"))  # type: ignore[arg-type]
+            await cur.execute(psycopg.sql.SQL(f"EXPLAIN {sql}"))
             text_rows = await cur.fetchall()
 
         return QueryPlan(

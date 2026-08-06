@@ -61,7 +61,9 @@ src = ["src", "tests", "evals"]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
-python_version = "3.11"
+# Deliberately not pinning python_version: mypy would then parse installed
+# third-party stubs (numpy's, via rank_bm25) under the older grammar and fail on
+# syntax it cannot know about. Let it follow the running interpreter.
 strict = true
 packages = ["pg_schema_scout"]
 mypy_path = "src"
