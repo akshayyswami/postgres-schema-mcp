@@ -17,7 +17,20 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'
     CREATE ROLE scout_ro LOGIN PASSWORD 'scout_ro_pw'
         NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
 
-    GRANT CREATE, CONNECT ON DATABASE :"POSTGRES_DB" TO aw_owner;
+    -- The database name comes from current_database() rather than a psql
+    -- variable: the official entrypoint does not export POSTGRES_DB into psql's
+    -- variable namespace, and GRANT ... ON DATABASE needs an identifier.
+    DO $seed$
+    BEGIN
+        EXECUTE format('GRANT CREATE, CONNECT ON DATABASE %I TO aw_owner', current_database());
+    END
+    $seed$;
+
+    -- install.sql puts the custom domains ("Name", "Flag", "AccountNumber", ...)
+    -- and the tablefunc extension in public. Postgres 15 dropped the implicit
+    -- CREATE grant on public, so the owner needs it back explicitly. scout_ro
+    -- gets USAGE only, in 20-grants.sql.
+    GRANT CREATE, USAGE ON SCHEMA public TO aw_owner;
 EOSQL
 
 # install.sql is upstream's, run unmodified. PGOPTIONS applies SET ROLE at connect

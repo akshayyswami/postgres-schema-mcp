@@ -9,24 +9,29 @@
 
 \set ON_ERROR_STOP on
 
--- Nothing is public by default.
-REVOKE ALL ON DATABASE :"POSTGRES_DB" FROM PUBLIC;
+-- Nothing is public by default. USAGE is then handed back to scout_ro alone so
+-- it can resolve the custom domain types that install.sql creates there; it is
+-- pointedly not given CREATE.
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO scout_ro;
 
--- No temp tables. This is what refuses `CREATE TEMP TABLE t AS SELECT 1;` at the
--- database layer, independently of the parser rejecting it.
-REVOKE TEMPORARY ON DATABASE :"POSTGRES_DB" FROM PUBLIC, scout_ro;
-
-GRANT CONNECT ON DATABASE :"POSTGRES_DB" TO scout_ro;
-
--- USAGE lets the role resolve names in the schema; it confers no rights on the
--- objects themselves. The five shorthand view schemas (pe/hr/pr/pu/sa) are
--- included so a human poking at the database by hand is not surprised, but the
--- retrieval index deliberately skips them (see retrieval.py).
-DO $$
+DO $grants$
 DECLARE
-    s text;
+    s  text;
+    db text := current_database();
 BEGIN
+    EXECUTE format('REVOKE ALL ON DATABASE %I FROM PUBLIC', db);
+
+    -- No temp tables. This is what refuses `CREATE TEMP TABLE t AS SELECT 1;` at
+    -- the database layer, independently of the parser rejecting it.
+    EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC, scout_ro', db);
+
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO scout_ro', db);
+
+    -- USAGE lets the role resolve names in the schema; it confers no rights on
+    -- the objects themselves. The five shorthand view schemas (pe/hr/pr/pu/sa)
+    -- are included so a human poking at the database by hand is not surprised,
+    -- but the retrieval index deliberately skips them (see retrieval.py).
     FOREACH s IN ARRAY ARRAY[
         'person', 'humanresources', 'production', 'purchasing', 'sales',
         'pe', 'hr', 'pr', 'pu', 'sa'
@@ -42,6 +47,6 @@ BEGIN
         );
     END LOOP;
 END
-$$;
+$grants$;
 
 -- EXPLAIN needs nothing beyond SELECT, so there is nothing further to grant.
