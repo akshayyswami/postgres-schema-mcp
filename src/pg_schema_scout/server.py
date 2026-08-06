@@ -29,10 +29,14 @@ from mcp.server import CacheHint, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from .db import Database
-from .guard import BlockedQuery, check_read_only
-from .retrieval import SchemaIndex, count_tokens, tokenizer_name
-from .types import QueryPlan, QueryResult, SchemaSlice, TableDetail, TableMatch
+# Absolute, not relative, imports. `mcp dev src/pg_schema_scout/server.py` loads
+# this file by path rather than as a package member, and a relative import then
+# fails with "attempted relative import with no known parent package". The
+# package is installed, so absolute imports resolve under both loaders.
+from pg_schema_scout.db import Database
+from pg_schema_scout.guard import BlockedQuery, check_read_only
+from pg_schema_scout.retrieval import SchemaIndex, count_tokens, tokenizer_name
+from pg_schema_scout.types import QueryPlan, QueryResult, SchemaSlice, TableDetail, TableMatch
 
 __all__ = ["main", "mcp"]
 
