@@ -15,3 +15,7 @@ init/data/
 
 .env
 .DS_Store
+
+# Generated incidentally by `mcp dev`, which shells out to uv. The project
+# and CI both install with pip, so a lockfile nobody maintains is misleading.
+uv.lock
