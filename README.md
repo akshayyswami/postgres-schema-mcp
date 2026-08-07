@@ -1,5 +1,9 @@
 # pg-schema-scout
 
+[![CI](https://github.com/AkshaySwami14/pg-schema-scout/actions/workflows/ci.yml/badge.svg)](https://github.com/AkshaySwami14/pg-schema-scout/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![MCP 2026-07-28](https://img.shields.io/badge/MCP-2026--07--28-blue.svg)](https://modelcontextprotocol.io)
+
 **Schema access for an agent is a retrieval problem, not a dump.**
 
 An MCP server that hands a model only the tables relevant to its question, and enforces
@@ -21,7 +25,9 @@ schemas — over the 26 questions in [`evals/questions.yaml`](evals/questions.ya
 Median slice 1,858; range 1,071–2,368. Tokenizer: `tiktoken/cl100k_base`. Backend: BM25.
 
 Reproduce with `python evals/measure_context.py`. Every figure in this README comes from a
-real run against the seeded database; none is estimated.
+real run against the seeded database; none is estimated. CI re-measures all of them on every
+push from a clean machine, and reproduces them exactly — so they are properties of the
+schema, not of the laptop they were first taken on.
 
 That ratio is the boring half of the argument. The interesting half is what happens on a
 schema too wide to dump at all: a dump-everything server does not degrade gracefully, it
