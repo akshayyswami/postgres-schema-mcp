@@ -161,8 +161,10 @@ def _stem(word: str) -> str:
     Deliberately conservative suffix-stripping rather than a real stemmer: it
     handles the regular plurals that dominate these questions and leaves
     everything else alone. It does not handle irregular morphology -- "paid"
-    does not reduce to "pay" -- which is a known ceiling on the lexical backend
-    and one of the reasons the embedding backend exists.
+    does not reduce to "pay" -- which is a real ceiling on the lexical backend.
+
+    Swapping in embeddings was the obvious fix for that ceiling, and it was
+    tried: see TitanBackend, where it measured slightly worse overall.
     """
     if len(word) > 4 and word.endswith("ies"):
         return word[:-3] + "y"
@@ -296,10 +298,19 @@ class BM25Backend:
 class TitanBackend:
     """Amazon Titan Text Embeddings V2 via Bedrock.
 
-    NOT EXERCISED. This code path has unit tests against a mocked Bedrock client
-    and has never been run against the real service, because the machine this
-    repo was built on had no AWS credentials. No measurement in the README comes
-    from it. Treat it as untested until someone runs it with real credentials.
+    Measured against the real service on the 26-question eval set, and it does
+    not win: recall@8 0.926 versus BM25's 0.955 (22/26 complete versus 24/26).
+    Both backends score ~0.84 before foreign-key propagation, so the embeddings
+    add nothing here that the lexical path was not already getting.
+
+    That is a defensible result rather than a disappointing one. These documents
+    are mostly identifiers and one-line comments, not prose, which is the regime
+    BM25 is good at. Two caveats worth stating: Titan is handed the same
+    identifier-heavy document text as BM25, and a prose rendering might suit it
+    better; and the lexicon and stemmer in this module were tuned with BM25 in
+    mind, so the comparison is not perfectly even-handed.
+
+    BM25 therefore remains the default, on evidence rather than convenience.
     """
 
     name = "titan"

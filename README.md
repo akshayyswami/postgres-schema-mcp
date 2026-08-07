@@ -202,6 +202,32 @@ on, so 0.955 is optimistic — it is not a held-out score. And better recall cos
 mean slice grew from 1,684 to 1,816, moving the headline ratio from 6.5× to 6.0×. Recall was
 judged worth more than the ratio.
 
+### BM25 vs Titan embeddings: the lexical backend wins
+
+Both backends were measured against the same 26 questions. Titan Text Embeddings V2 ran
+against the real Bedrock service — 94 invocations, 68 table documents plus 26 queries.
+
+| Backend | FK propagation | recall@8 | precision@8 | complete recall |
+|---|---|---|---|---|
+| **BM25 (default)** | **0.35** | **0.955** | **0.260** | **24/26** |
+| Titan V2 | 0.35 | 0.926 | 0.255 | 22/26 |
+| BM25 | off | 0.840 | 0.226 | 17/26 |
+| Titan V2 | off | 0.833 | 0.226 | 17/26 |
+
+**The embeddings lose.** Before propagation the two are indistinguishable (0.840 vs 0.833),
+so the embeddings were not finding anything the lexical path missed; after propagation BM25
+pulls ahead. This is a reasonable outcome rather than a surprising one: a table's document
+here is mostly identifiers and a one-line comment, not prose, which is the regime BM25 is
+built for. Foreign-key structure turned out to matter far more than semantic similarity.
+
+Two caveats that cut against the winner. Titan was handed the same identifier-heavy document
+text as BM25, and a prose rendering of each table might suit it better. And the lexicon and
+stemmer were written with BM25 in mind, so the comparison is not perfectly even-handed.
+
+BM25 stays the default — which also means the repo runs offline, with no credentials and no
+per-query cost. That was already the plan; it is now the plan *and* the better-measuring
+option. Reproduce with `PGSS_RETRIEVAL_BACKEND=titan`.
+
 ---
 
 ## Known limits
@@ -216,15 +242,16 @@ judged worth more than the ratio.
   a note telling the model to do this, and the failure is named in the `search_schema`
   docstring the model reads.
 - **The lexical backend cannot do irregular morphology.** Stemming reduces `employees` to
-  `employee`, but `paid` does not reduce to `pay`. This is one of the reasons the embedding
-  backend exists. There is a test asserting the limit rather than hiding it.
+  `employee`, but `paid` does not reduce to `pay`. There is a test asserting the limit rather
+  than hiding it. Embeddings were the obvious fix and were measured; they did not help
+  overall (see above), so this ceiling stands.
 - **The identifier lexicon is schema-specific.** AdventureWorks names are lowercase
   concatenations (`salesorderheader`), and splitting them needs a word list. The one in
   `retrieval.py` covers this schema's vocabulary; another database would want its own.
-- **The Titan/Bedrock backend has never been run.** It is written, and unit-tested against a
-  mocked Bedrock client, but the machine this was built on had no AWS credentials, so it has
-  never touched the real service. No number in this README comes from it. Treat it as
-  untested code.
+- **The Titan/Bedrock backend is measured but not the default**, because it measured worse.
+  It has been run against the real service, so the numbers above are real; it is not a code
+  path to trust blindly at scale, since it has only ever been exercised over 68 documents and
+  26 queries with no retry, batching or rate-limit handling.
 - **Not implemented, deliberately:** no prompts, no resources, no write path of any kind, no
   `EXPLAIN ANALYZE` (it would execute the query), no cross-database or multi-tenant support,
   no auth — the server is expected to run locally over stdio, and the security boundary is
