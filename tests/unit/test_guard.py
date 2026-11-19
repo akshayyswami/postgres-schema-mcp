@@ -13,9 +13,9 @@ from typing import Any
 import pytest
 import yaml
 
-from postgres_schema_mcp.guard import BlockedQuery, check_read_only
+from postgres_schema_mcp.core.guard import BlockedQueryError, check_read_only
 
-FAULTS = yaml.safe_load((Path(__file__).resolve().parents[1] / "evals" / "faults.yaml").read_text())
+FAULTS = yaml.safe_load((Path(__file__).resolve().parents[2] / "evals" / "faults.yaml").read_text())
 
 
 def _cases(section: str) -> list[Any]:
@@ -29,7 +29,7 @@ def _cases(section: str) -> list[Any]:
 
 @pytest.mark.parametrize("sql", _cases("must_block"))
 def test_must_block(sql: str) -> None:
-    with pytest.raises(BlockedQuery):
+    with pytest.raises(BlockedQueryError):
         check_read_only(sql)
 
 
@@ -46,7 +46,7 @@ def test_must_allow(sql: str) -> None:
 
 def test_blocked_message_names_the_offending_construct() -> None:
     sql = "WITH gone AS (DELETE FROM customer RETURNING *) SELECT * FROM gone;"
-    with pytest.raises(BlockedQuery) as exc:
+    with pytest.raises(BlockedQueryError) as exc:
         check_read_only(sql)
     msg = str(exc.value)
     assert msg.startswith("Blocked:")
@@ -57,7 +57,7 @@ def test_blocked_message_names_the_offending_construct() -> None:
 
 
 def test_blocked_message_for_denylisted_function_names_the_function() -> None:
-    with pytest.raises(BlockedQuery) as exc:
+    with pytest.raises(BlockedQueryError) as exc:
         check_read_only("SELECT pg_read_file('/etc/passwd');")
     assert "pg_read_file" in str(exc.value)
 
@@ -79,13 +79,13 @@ def test_blocked_message_for_denylisted_function_names_the_function() -> None:
     ],
 )
 def test_unparseable_or_empty_is_blocked(sql: str) -> None:
-    with pytest.raises(BlockedQuery):
+    with pytest.raises(BlockedQueryError):
         check_read_only(sql)
 
 
 def test_two_selects_is_still_blocked() -> None:
     """Only a single statement is allowed, even when both halves are harmless."""
-    with pytest.raises(BlockedQuery) as exc:
+    with pytest.raises(BlockedQueryError) as exc:
         check_read_only("SELECT 1; SELECT 2;")
     assert "one statement" in str(exc.value).lower() or "single" in str(exc.value).lower()
 
@@ -127,7 +127,9 @@ def test_trailing_semicolon_is_fine() -> None:
             "(SELECT businessentityid FROM pg_ls_dir('/'));",
             id="denylisted-fn-in-subquery",
         ),
-        pytest.param("SELECT pg_catalog.pg_read_file('/etc/passwd');", id="schema-qualified-denylisted-fn"),
+        pytest.param(
+            "SELECT pg_catalog.pg_read_file('/etc/passwd');", id="schema-qualified-denylisted-fn"
+        ),
         pytest.param("SELECT PG_READ_FILE('/etc/passwd');", id="uppercase-denylisted-fn"),
         pytest.param("SELECT lo_import('/etc/passwd');", id="large-object-import"),
         pytest.param("SELECT pg_sleep(30);", id="pg-sleep-denial-of-service"),
@@ -136,7 +138,7 @@ def test_trailing_semicolon_is_fine() -> None:
     ],
 )
 def test_additional_blocked_shapes(sql: str) -> None:
-    with pytest.raises(BlockedQuery):
+    with pytest.raises(BlockedQueryError):
         check_read_only(sql)
 
 
@@ -177,7 +179,9 @@ def test_guard_does_not_use_string_matching() -> None:
     This is the regex failure mode running in the opposite direction: a text
     denylist rejects this perfectly ordinary query.
     """
-    check_read_only("SELECT 'pg_read_file' AS fn_name, 'DELETE FROM x' AS note FROM person.person LIMIT 1")
+    check_read_only(
+        "SELECT 'pg_read_file' AS fn_name, 'DELETE FROM x' AS note FROM person.person LIMIT 1"
+    )
 
 
 def test_trailing_comment_is_not_a_second_statement() -> None:

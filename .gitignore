@@ -1,21 +1,22 @@
 .venv/
 __pycache__/
 *.py[cod]
-*.egg-info/
-build/
-dist/
-.pytest_cache/
 .mypy_cache/
+.pytest_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+*.tmp
+.DS_Store
+.env
+.env.*
+!.env.example
+CLAUDE.local.md
 
 # Seed data is downloaded at image build time, never committed.
 init/data/
 *.zip
 *.csv
-
-.env
-.DS_Store
-
-# Generated incidentally by `mcp dev`, which shells out to uv. The project
-# and CI both install with pip, so a lockfile nobody maintains is misleading.
-uv.lock

@@ -11,10 +11,12 @@ Requires the seeded container (`docker compose up -d`). Marked `db`, so
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import psycopg
 import pytest
 
-from postgres_schema_mcp.db import Settings
+from postgres_schema_mcp.adapters.db import Settings
 
 pytestmark = pytest.mark.db
 
@@ -31,7 +33,7 @@ def dsn() -> str:
 
 
 @pytest.fixture
-def conn(dsn: str) -> psycopg.Connection[tuple[object, ...]]:
+def conn(dsn: str) -> Iterator[psycopg.Connection[tuple[object, ...]]]:
     settings = Settings()
     with psycopg.connect(dsn, options=settings.session_options, connect_timeout=5) as c:
         yield c
@@ -64,13 +66,16 @@ def test_reads_work(conn: psycopg.Connection[tuple[object, ...]]) -> None:
         cur.execute("SELECT count(*) FROM person.person")
         row = cur.fetchone()
     assert row is not None
+    assert isinstance(row[0], int)
     assert row[0] > 0
 
 
 WRITE_ATTEMPTS = [
     pytest.param("DELETE FROM person.person", id="delete"),
     pytest.param("UPDATE person.person SET firstname = 'x'", id="update"),
-    pytest.param("INSERT INTO person.businessentity (businessentityid) VALUES (999999)", id="insert"),
+    pytest.param(
+        "INSERT INTO person.businessentity (businessentityid) VALUES (999999)", id="insert"
+    ),
     pytest.param("TRUNCATE person.person", id="truncate"),
     pytest.param("DROP TABLE person.person", id="drop"),
     pytest.param("ALTER TABLE person.person ADD COLUMN injected int", id="alter"),
@@ -86,11 +91,12 @@ def test_database_refuses_writes_without_help_from_the_guard(
     conn: psycopg.Connection[tuple[object, ...]], sql: str
 ) -> None:
     with pytest.raises(psycopg.Error) as exc, conn.cursor() as cur:
-        cur.execute(sql)  # type: ignore[arg-type]
+        cur.execute(sql)
 
     message = str(exc.value).lower()
     assert any(
-        phrase in message for phrase in ("permission denied", "must be owner", "read-only transaction")
+        phrase in message
+        for phrase in ("permission denied", "must be owner", "read-only transaction")
     ), f"expected a privilege error from Postgres, got: {exc.value}"
 
 

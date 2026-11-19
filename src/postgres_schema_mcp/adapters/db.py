@@ -28,7 +28,8 @@ import psycopg
 from psycopg.rows import tuple_row
 from psycopg_pool import AsyncConnectionPool
 
-from .types import ColumnInfo, ForeignKey, QueryPlan, QueryResult, TableDetail
+from ..core.ddl import render_ddl
+from ..core.types import ColumnInfo, ForeignKey, QueryPlan, QueryResult, TableDetail
 
 __all__ = ["Database", "Settings"]
 
@@ -59,7 +60,9 @@ class Settings:
             if s.strip()
         )
     )
-    statement_timeout_ms: int = field(default_factory=lambda: _env_int("PGSS_STATEMENT_TIMEOUT_MS", 10_000))
+    statement_timeout_ms: int = field(
+        default_factory=lambda: _env_int("PGSS_STATEMENT_TIMEOUT_MS", 10_000)
+    )
     idle_in_transaction_timeout_ms: int = field(
         default_factory=lambda: _env_int("PGSS_IDLE_TX_TIMEOUT_MS", 10_000)
     )
@@ -165,36 +168,6 @@ WHERE con.contype IN ('p', 'f') AND sn.nspname = ANY(%(schemas)s)
 """
 
 
-def render_ddl(table: TableDetail) -> str:
-    """A CREATE TABLE rendering of a table, for the model to read.
-
-    Deliberately not pg_dump output: no storage parameters, no tablespaces, no
-    ownership. Those cost tokens and answer no question a query author has.
-    """
-    lines = [f"CREATE TABLE {table.qualified_name} ("]
-    body: list[str] = []
-    for col in table.columns:
-        piece = f"    {col.name} {col.type}"
-        if not col.nullable:
-            piece += " NOT NULL"
-        if col.comment:
-            piece += f"  -- {col.comment}"
-        body.append(piece)
-    if table.primary_key:
-        body.append(f"    PRIMARY KEY ({', '.join(table.primary_key)})")
-    for fk in table.foreign_keys:
-        body.append(
-            f"    FOREIGN KEY ({', '.join(fk.columns)}) "
-            f"REFERENCES {fk.references_schema}.{fk.references_table} "
-            f"({', '.join(fk.references_columns)})"
-        )
-    lines.append(",\n".join(body))
-    lines.append(");")
-    if table.comment:
-        lines.append(f"-- {table.comment}")
-    return "\n".join(lines)
-
-
 class Database:
     """Async connection pool, always connected as the read-only role."""
 
@@ -266,7 +239,9 @@ class Database:
                 "with GROUP BY, or raise max_rows (capped at "
                 f"{self.settings.max_rows_cap})."
             )
-        return QueryResult(columns=columns, rows=rows, row_count=len(rows), truncated=truncated, note=note)
+        return QueryResult(
+            columns=columns, rows=rows, row_count=len(rows), truncated=truncated, note=note
+        )
 
     async def explain(self, sql: str) -> QueryPlan:
         """EXPLAIN a guarded SELECT. Never ANALYZE, so the query does not run."""
@@ -309,7 +284,16 @@ class Database:
         outgoing: dict[tuple[str, str], list[ForeignKey]] = {}
         incoming: dict[tuple[str, str], list[ForeignKey]] = {}
 
-        for kind, name, schema_name, table_name, cols, ref_schema, ref_table, ref_cols in constraint_rows:
+        for (
+            kind,
+            name,
+            schema_name,
+            table_name,
+            cols,
+            ref_schema,
+            ref_table,
+            ref_cols,
+        ) in constraint_rows:
             key = (schema_name, table_name)
             if kind == "p":
                 primary_keys[key] = list(cols or [])

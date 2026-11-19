@@ -13,17 +13,16 @@ from typing import Any
 
 import pytest
 
-from postgres_schema_mcp.retrieval import (
+from postgres_schema_mcp.adapters.backends import TitanBackend, build_backend
+from postgres_schema_mcp.core.retrieval import (
     BM25Backend,
     SchemaIndex,
-    TitanBackend,
-    build_backend,
     build_document,
     count_tokens,
     tokenize,
     tokenizer_name,
 )
-from postgres_schema_mcp.types import ColumnInfo, ForeignKey, TableDetail
+from postgres_schema_mcp.core.types import ColumnInfo, ForeignKey, TableDetail
 
 
 def make_table(
@@ -81,7 +80,9 @@ def tables() -> list[TableDetail]:
             ["businessentityid", "ratechangedate", "rate"],
             comment="Employee pay history.",
         ),
-        make_table("production", "product", ["productid", "name", "listprice"], comment="Products sold."),
+        make_table(
+            "production", "product", ["productid", "name", "listprice"], comment="Products sold."
+        ),
     ]
 
 
@@ -135,27 +136,27 @@ def test_known_ceiling_irregular_morphology_is_not_handled() -> None:
 
 
 def test_bm25_ranks_the_relevant_table_first(tables: list[TableDetail]) -> None:
-    index = SchemaIndex(tables, backend="bm25")
+    index = SchemaIndex(tables)
     results = index.search("what did employees get paid over time", limit=2)
     assert results[0][0].qualified_name == "humanresources.employeepayhistory"
 
 
 def test_search_respects_limit(tables: list[TableDetail]) -> None:
-    index = SchemaIndex(tables, backend="bm25")
+    index = SchemaIndex(tables)
     assert len(index.search("sales order", limit=2)) == 2
     # A limit beyond the table count is clamped rather than erroring.
     assert len(index.search("sales order", limit=99)) == len(tables)
 
 
 def test_search_is_deterministic(tables: list[TableDetail]) -> None:
-    index = SchemaIndex(tables, backend="bm25")
+    index = SchemaIndex(tables)
     first = [t.qualified_name for t, _ in index.search("sales order", limit=4)]
     second = [t.qualified_name for t, _ in index.search("sales order", limit=4)]
     assert first == second
 
 
 def test_scores_are_descending(tables: list[TableDetail]) -> None:
-    index = SchemaIndex(tables, backend="bm25")
+    index = SchemaIndex(tables)
     scores = [s for _, s in index.search("sales order product", limit=4)]
     assert scores == sorted(scores, reverse=True)
 
@@ -176,15 +177,17 @@ def test_fk_neighbour_is_pulled_into_the_slice(tables: list[TableDetail]) -> Non
     salesorderdetail matches the question lexically; salesorderheader is reached
     only through the foreign key between them.
     """
-    with_graph = SchemaIndex(tables, backend="bm25", neighbour_weight=0.35)
-    got = {t.qualified_name for t, _ in with_graph.search("individual products on an order", limit=2)}
+    with_graph = SchemaIndex(tables, neighbour_weight=0.35)
+    got = {
+        t.qualified_name for t, _ in with_graph.search("individual products on an order", limit=2)
+    }
     assert "sales.salesorderdetail" in got
     assert "sales.salesorderheader" in got
 
 
 def test_neighbour_weight_zero_disables_propagation(tables: list[TableDetail]) -> None:
     """The mechanism is switchable, which is how the before/after was measured."""
-    plain = SchemaIndex(tables, backend="bm25", neighbour_weight=0.0)
+    plain = SchemaIndex(tables, neighbour_weight=0.0)
     ranked = plain.search("individual products on an order", limit=4)
     assert len(ranked) == 4
     scores = [s for _, s in ranked]
@@ -193,7 +196,7 @@ def test_neighbour_weight_zero_disables_propagation(tables: list[TableDetail]) -
 
 def test_propagation_never_changes_the_slice_size(tables: list[TableDetail]) -> None:
     """Pulling neighbours in must not quietly enlarge the response."""
-    index = SchemaIndex(tables, backend="bm25", neighbour_weight=0.35)
+    index = SchemaIndex(tables, neighbour_weight=0.35)
     for limit in (1, 2, 3, len(tables)):
         assert len(index.search("sales order product", limit)) == limit
 
@@ -204,7 +207,7 @@ def test_propagation_never_changes_the_slice_size(tables: list[TableDetail]) -> 
 
 
 def test_lookup_by_qualified_and_bare_name(tables: list[TableDetail]) -> None:
-    index = SchemaIndex(tables, backend="bm25")
+    index = SchemaIndex(tables)
     assert index.lookup("sales.salesorderheader") is not None
     assert index.lookup("salesorderheader") is not None
     assert index.lookup("SALES.SalesOrderHeader") is not None
@@ -212,7 +215,7 @@ def test_lookup_by_qualified_and_bare_name(tables: list[TableDetail]) -> None:
 
 
 def test_lookup_returns_none_for_unknown(tables: list[TableDetail]) -> None:
-    assert SchemaIndex(tables, backend="bm25").lookup("no_such_table") is None
+    assert SchemaIndex(tables).lookup("no_such_table") is None
 
 
 # --------------------------------------------------------------------------
@@ -222,7 +225,7 @@ def test_lookup_returns_none_for_unknown(tables: list[TableDetail]) -> None:
 
 def test_edges_within_excludes_edges_leaving_the_slice(tables: list[TableDetail]) -> None:
     """A join hint to a table the model cannot see is wasted tokens."""
-    index = SchemaIndex(tables, backend="bm25")
+    index = SchemaIndex(tables)
     slice_tables = [t for t in tables if t.schema_name == "sales"]
     edges = index.edges_within(slice_tables)
     names = {e.constraint_name for e in edges}
@@ -238,7 +241,7 @@ def test_document_includes_comments_and_columns(tables: list[TableDetail]) -> No
 
 
 def test_full_schema_ddl_covers_every_table(tables: list[TableDetail]) -> None:
-    index = SchemaIndex(tables, backend="bm25")
+    index = SchemaIndex(tables)
     for table in tables:
         assert table.qualified_name in index.full_schema_ddl
     assert index.full_schema_tokens() > 0

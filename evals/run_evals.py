@@ -25,9 +25,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from postgres_schema_mcp.db import Database
-from postgres_schema_mcp.guard import BlockedQuery, check_read_only
-from postgres_schema_mcp.retrieval import SchemaIndex
+from postgres_schema_mcp.adapters.backends import make_index
+from postgres_schema_mcp.adapters.db import Database
+from postgres_schema_mcp.core.guard import BlockedQueryError, check_read_only
 
 EVALS = Path(__file__).resolve().parent
 
@@ -60,7 +60,7 @@ async def run_fault_matrix(db: Database | None) -> tuple[bool, list[str]]:
     for case in faults["must_block"]:
         try:
             check_read_only(case["sql"])
-        except BlockedQuery:
+        except BlockedQueryError:
             blocked += 1
         else:
             failures.append(f"must_block/{case['id']}: NOT blocked ({case.get('reason', '')})")
@@ -71,7 +71,7 @@ async def run_fault_matrix(db: Database | None) -> tuple[bool, list[str]]:
         try:
             check_read_only(case["sql"])
             allowed += 1
-        except BlockedQuery as exc:
+        except BlockedQueryError as exc:
             failures.append(f"must_allow/{case['id']}: wrongly blocked -- {exc}")
             continue
 
@@ -88,7 +88,11 @@ async def run_fault_matrix(db: Database | None) -> tuple[bool, list[str]]:
     print("Fault matrix")
     print(f"  must_block : {blocked}/{total_block} blocked")
     print(f"  must_allow : {allowed}/{total_allow} allowed", end="")
-    print(f", {executed}/{total_allow} executed against the database" if db else " (execution skipped)")
+    print(
+        f", {executed}/{total_allow} executed against the database"
+        if db
+        else " (execution skipped)"
+    )
 
     return not failures, failures
 
@@ -99,7 +103,7 @@ async def run_fault_matrix(db: Database | None) -> tuple[bool, list[str]]:
 
 
 async def run_retrieval(db: Database, k: int) -> tuple[bool, list[str]]:
-    index = SchemaIndex(await db.introspect())
+    index = make_index(await db.introspect())
     questions = load("questions.yaml")["questions"]
     failures: list[str] = []
 
@@ -112,7 +116,9 @@ async def run_retrieval(db: Database, k: int) -> tuple[bool, list[str]]:
         expected = {t.lower() for t in q["tables"]}
         unknown = expected - {t.qualified_name.lower() for t in index.tables}
         if unknown:
-            failures.append(f"questions/{q['id']}: names tables that do not exist: {sorted(unknown)}")
+            failures.append(
+                f"questions/{q['id']}: names tables that do not exist: {sorted(unknown)}"
+            )
             continue
 
         got = [t.qualified_name.lower() for t, _ in index.search(q["question"], k)]
@@ -133,7 +139,8 @@ async def run_retrieval(db: Database, k: int) -> tuple[bool, list[str]]:
     print(f"  recall@{k}          : {mean_recall:.3f}   (floor {MIN_RECALL_AT_K})")
     print(f"  precision@{k}       : {mean_precision:.3f}   (floor {MIN_PRECISION_AT_K})")
     print(
-        f"  full-recall queries : {complete}/{n} = {full_fraction:.3f}   (floor {MIN_FULL_RECALL_FRACTION})"
+        f"  full-recall queries : {complete}/{n} = {full_fraction:.3f}   "
+        f"(floor {MIN_FULL_RECALL_FRACTION})"
     )
     print(
         f"  note: precision@{k} is structurally capped, since a question needs "
@@ -149,7 +156,9 @@ async def run_retrieval(db: Database, k: int) -> tuple[bool, list[str]]:
     if mean_precision < MIN_PRECISION_AT_K:
         failures.append(f"precision@{k} {mean_precision:.3f} below floor {MIN_PRECISION_AT_K}")
     if full_fraction < MIN_FULL_RECALL_FRACTION:
-        failures.append(f"full-recall fraction {full_fraction:.3f} below floor {MIN_FULL_RECALL_FRACTION}")
+        failures.append(
+            f"full-recall fraction {full_fraction:.3f} below floor {MIN_FULL_RECALL_FRACTION}"
+        )
     return not failures, failures
 
 

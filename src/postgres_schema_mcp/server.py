@@ -33,10 +33,17 @@ from mcp.types import ToolAnnotations
 # this file by path rather than as a package member, and a relative import then
 # fails with "attempted relative import with no known parent package". The
 # package is installed, so absolute imports resolve under both loaders.
-from postgres_schema_mcp.db import Database
-from postgres_schema_mcp.guard import BlockedQuery, check_read_only
-from postgres_schema_mcp.retrieval import SchemaIndex, count_tokens, tokenizer_name
-from postgres_schema_mcp.types import QueryPlan, QueryResult, SchemaSlice, TableDetail, TableMatch
+from postgres_schema_mcp.adapters.backends import make_index
+from postgres_schema_mcp.adapters.db import Database
+from postgres_schema_mcp.core.guard import BlockedQueryError, check_read_only
+from postgres_schema_mcp.core.retrieval import SchemaIndex, count_tokens, tokenizer_name
+from postgres_schema_mcp.core.types import (
+    QueryPlan,
+    QueryResult,
+    SchemaSlice,
+    TableDetail,
+    TableMatch,
+)
 
 __all__ = ["main", "mcp"]
 
@@ -107,7 +114,7 @@ async def get_index() -> SchemaIndex:
         db = await get_db()
         async with _lock:
             if _index is None:
-                _index = SchemaIndex(await db.introspect())
+                _index = make_index(await db.introspect())
     return _index
 
 
@@ -121,7 +128,7 @@ def _guard(sql: str) -> None:
     """
     try:
         check_read_only(sql)
-    except BlockedQuery as exc:
+    except BlockedQueryError as exc:
         raise ToolError(str(exc)) from exc
 
 
@@ -207,7 +214,9 @@ async def describe_table(name: str) -> TableDetail:
     table = index.lookup(name)
     if table is None:
         wanted = name.strip().lower()
-        close = sorted(t.qualified_name for t in index.tables if wanted in t.qualified_name.lower())[:8]
+        close = sorted(
+            t.qualified_name for t in index.tables if wanted in t.qualified_name.lower()
+        )[:8]
         hint = f" Close matches: {', '.join(close)}." if close else ""
         raise ToolError(
             f"No table named {name!r} in the indexed schemas "

@@ -1,24 +1,18 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "postgres-schema-mcp"
 version = "0.1.0"
 description = "An MCP server that retrieves the relevant slice of a wide Postgres schema instead of dumping all of it, with read-only enforced in three layers."
 readme = "README.md"
-license = { file = "LICENSE" }
-requires-python = ">=3.11"
+license = "MIT"
 authors = [{ name = "Akshay Swaminathan" }]
+requires-python = ">=3.12"
 keywords = ["mcp", "model-context-protocol", "postgres", "retrieval", "sql"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Database",
 ]
-
 dependencies = [
     # Pinned exactly. The v1 line continues in parallel, so an unpinned install
     # can land on either major version, and the two APIs are not compatible.
@@ -34,39 +28,55 @@ dependencies = [
 # Amazon Titan Text Embeddings V2 via Bedrock. Optional so the repo runs
 # offline with no credentials; BM25 is the default backend.
 bedrock = ["boto3>=1.35"]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-    "ruff>=0.9",
-    "mypy>=1.14",
-    "types-PyYAML>=6.0",
-    "boto3-stubs[bedrock-runtime]>=1.35",
-]
 
 [project.scripts]
 postgres-schema-mcp = "postgres_schema_mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/akshayyswami/postgres-schema-mcp"
+Issues = "https://github.com/akshayyswami/postgres-schema-mcp/issues"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-cov",
+    "pre-commit",
+    "types-PyYAML>=6.0",
+    "boto3-stubs[bedrock-runtime]>=1.35",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/postgres_schema_mcp"]
 
 [tool.ruff]
-line-length = 110
-target-version = "py311"
+line-length = 100
+target-version = "py312"
 src = ["src", "tests", "evals"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "S", "PT", "C4", "N", "PTH"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"evals/**" = ["S101"]
+
+[tool.ruff.format]
+docstring-code-format = true
 
 [tool.mypy]
+strict = true
+files = ["src", "tests", "evals"]
+mypy_path = "src"
 # Deliberately not pinning python_version: mypy would then parse installed
 # third-party stubs (numpy's, via rank_bm25) under the older grammar and fail on
 # syntax it cannot know about. Let it follow the running interpreter.
-strict = true
-packages = ["postgres_schema_mcp"]
-mypy_path = "src"
 
 [[tool.mypy.overrides]]
 # Neither ships type information.
@@ -75,7 +85,17 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "db: test requires the seeded Postgres from docker-compose (deselect with -m 'not db')",
 ]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

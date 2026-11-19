@@ -28,8 +28,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from postgres_schema_mcp.db import Database
-from postgres_schema_mcp.retrieval import SchemaIndex, count_tokens, tokenizer_name
+from postgres_schema_mcp.adapters.backends import make_index
+from postgres_schema_mcp.adapters.db import Database
+from postgres_schema_mcp.core.retrieval import count_tokens, tokenizer_name
 
 EVALS = Path(__file__).resolve().parent
 
@@ -40,13 +41,14 @@ async def main() -> int:
     args = parser.parse_args()
 
     async with Database() as db:
-        index = SchemaIndex(await db.introspect())
+        index = make_index(await db.introspect())
 
     questions = yaml.safe_load((EVALS / "questions.yaml").read_text())["questions"]
 
     full_tokens = index.full_schema_tokens()
     slice_tokens = [
-        count_tokens("\n\n".join(t.ddl for t, _ in index.search(q["question"], args.k))) for q in questions
+        count_tokens("\n\n".join(t.ddl for t, _ in index.search(q["question"], args.k)))
+        for q in questions
     ]
 
     mean_slice = statistics.mean(slice_tokens)

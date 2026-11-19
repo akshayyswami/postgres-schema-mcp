@@ -29,14 +29,14 @@ from typing import Final
 import sqlglot
 from sqlglot import exp
 
-__all__ = ["DENYLISTED_FUNCTIONS", "BlockedQuery", "check_read_only"]
+__all__ = ["DENYLISTED_FUNCTIONS", "BlockedQueryError", "check_read_only"]
 
 _DIALECT: Final = "postgres"
 
 _REMEDY: Final = "This server is read-only. Rewrite the request as a plain SELECT."
 
 
-class BlockedQuery(Exception):
+class BlockedQueryError(Exception):
     """Raised when a statement fails the read-only policy.
 
     The string form is written to be read by a model: it names the construct
@@ -159,7 +159,7 @@ def _function_names(node: exp.Expr) -> list[str]:
 
 
 def check_read_only(sql: str) -> None:
-    """Raise BlockedQuery unless `sql` is a single read-only statement.
+    """Raise BlockedQueryError unless `sql` is a single read-only statement.
 
     Returns None on success. Fails closed: anything that cannot be parsed, or
     that parses to something other than exactly one SELECT-shaped statement, is
@@ -168,7 +168,7 @@ def check_read_only(sql: str) -> None:
     try:
         statements = sqlglot.parse(sql, dialect=_DIALECT, error_level=sqlglot.ErrorLevel.RAISE)
     except Exception as exc:  # sqlglot raises several types; all mean "unverifiable"
-        raise BlockedQuery(
+        raise BlockedQueryError(
             f"the statement could not be parsed as PostgreSQL ({type(exc).__name__}), "
             "so it cannot be checked."
         ) from exc
@@ -179,9 +179,11 @@ def check_read_only(sql: str) -> None:
     # "SELECT 1; /* c */ DROP TABLE t;" still parses to two real statements.
     real = [s for s in statements if s is not None and not isinstance(s, exp.Semicolon)]
     if not real:
-        raise BlockedQuery("no SQL statement was found (the input was empty or only comments).")
+        raise BlockedQueryError(
+            "no SQL statement was found (the input was empty or only comments)."
+        )
     if len(real) > 1:
-        raise BlockedQuery(
+        raise BlockedQueryError(
             f"the input contains {len(real)} statements; statement stacking is not allowed. "
             "Send exactly one statement."
         )
@@ -189,21 +191,23 @@ def check_read_only(sql: str) -> None:
     root = real[0]
     if not isinstance(root, _ALLOWED_ROOTS):
         label = _FORBIDDEN_NODES.get(type(root), type(root).__name__.upper())
-        raise BlockedQuery(f"the statement is a {label}, and only SELECT is permitted.")
+        raise BlockedQueryError(f"the statement is a {label}, and only SELECT is permitted.")
 
     for node in root.walk():
         for forbidden, label in _FORBIDDEN_NODES.items():
             if isinstance(node, forbidden):
                 if node is root:
-                    raise BlockedQuery(f"the statement is a {label}, and only SELECT is permitted.")
-                raise BlockedQuery(
+                    raise BlockedQueryError(
+                        f"the statement is a {label}, and only SELECT is permitted."
+                    )
+                raise BlockedQueryError(
                     f"the statement contains a {label} nested inside the query "
                     "(in a CTE or subquery), which a prefix check would miss."
                 )
 
         for name in _function_names(node):
             if name in DENYLISTED_FUNCTIONS:
-                raise BlockedQuery(
+                raise BlockedQueryError(
                     f"the statement calls {name}(), which is not permitted "
                     "(filesystem, network, administrative or denial-of-service function)."
                 )

@@ -83,7 +83,9 @@ class SchemaSlice(BaseModel):
         description="Token count of the entire schema's DDL, for comparison with estimated_tokens."
     )
     tokenizer: str = Field(description="Which tokenizer produced the counts.")
-    backend: str = Field(description="Retrieval backend that ranked these tables: 'bm25' or 'titan'.")
+    backend: str = Field(
+        description="Retrieval backend that ranked these tables: 'bm25' or 'titan'."
+    )
     note: str | None = Field(
         default=None,
         description="Guidance for the model, including what to do if the table it needs is absent.",
