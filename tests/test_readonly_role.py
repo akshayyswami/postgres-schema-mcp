@@ -14,7 +14,7 @@ from __future__ import annotations
 import psycopg
 import pytest
 
-from pg_schema_scout.db import Settings
+from postgres_schema_mcp.db import Settings
 
 pytestmark = pytest.mark.db
 

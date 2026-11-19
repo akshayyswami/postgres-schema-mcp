@@ -25,9 +25,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pg_schema_scout.db import Database
-from pg_schema_scout.guard import BlockedQuery, check_read_only
-from pg_schema_scout.retrieval import SchemaIndex
+from postgres_schema_mcp.db import Database
+from postgres_schema_mcp.guard import BlockedQuery, check_read_only
+from postgres_schema_mcp.retrieval import SchemaIndex
 
 EVALS = Path(__file__).resolve().parent
 

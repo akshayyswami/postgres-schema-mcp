@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 import yaml
 
-from pg_schema_scout.guard import BlockedQuery, check_read_only
+from postgres_schema_mcp.guard import BlockedQuery, check_read_only
 
 FAULTS = yaml.safe_load((Path(__file__).resolve().parents[1] / "evals" / "faults.yaml").read_text())
 

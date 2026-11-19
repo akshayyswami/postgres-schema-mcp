@@ -29,14 +29,14 @@ from mcp.server import CacheHint, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-# Absolute, not relative, imports. `mcp dev src/pg_schema_scout/server.py` loads
+# Absolute, not relative, imports. `mcp dev src/postgres_schema_mcp/server.py` loads
 # this file by path rather than as a package member, and a relative import then
 # fails with "attempted relative import with no known parent package". The
 # package is installed, so absolute imports resolve under both loaders.
-from pg_schema_scout.db import Database
-from pg_schema_scout.guard import BlockedQuery, check_read_only
-from pg_schema_scout.retrieval import SchemaIndex, count_tokens, tokenizer_name
-from pg_schema_scout.types import QueryPlan, QueryResult, SchemaSlice, TableDetail, TableMatch
+from postgres_schema_mcp.db import Database
+from postgres_schema_mcp.guard import BlockedQuery, check_read_only
+from postgres_schema_mcp.retrieval import SchemaIndex, count_tokens, tokenizer_name
+from postgres_schema_mcp.types import QueryPlan, QueryResult, SchemaSlice, TableDetail, TableMatch
 
 __all__ = ["main", "mcp"]
 
@@ -70,7 +70,7 @@ READ_ONLY = ToolAnnotations(
 )
 
 mcp = MCPServer(
-    "pg-schema-scout",
+    "postgres-schema-mcp",
     version="0.1.0",
     instructions=INSTRUCTIONS,
     # Honest hints. The tool list is derived from this server's own code, so it

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pg-schema-scout"
+name = "postgres-schema-mcp"
 version = "0.1.0"
 description = "An MCP server that retrieves the relevant slice of a wide Postgres schema instead of dumping all of it, with read-only enforced in three layers."
 readme = "README.md"
@@ -44,13 +44,13 @@ dev = [
 ]
 
 [project.scripts]
-pg-schema-scout = "pg_schema_scout.server:main"
+postgres-schema-mcp = "postgres_schema_mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/AkshaySwami14/pg-schema-scout"
+Homepage = "https://github.com/akshayyswami/postgres-schema-mcp"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pg_schema_scout"]
+packages = ["src/postgres_schema_mcp"]
 
 [tool.ruff]
 line-length = 110
@@ -65,7 +65,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 # third-party stubs (numpy's, via rank_bm25) under the older grammar and fail on
 # syntax it cannot know about. Let it follow the running interpreter.
 strict = true
-packages = ["pg_schema_scout"]
+packages = ["postgres_schema_mcp"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]

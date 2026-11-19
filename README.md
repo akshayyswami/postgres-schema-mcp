@@ -1,6 +1,6 @@
-# pg-schema-scout
+# postgres-schema-mcp
 
-[![CI](https://github.com/AkshaySwami14/pg-schema-scout/actions/workflows/ci.yml/badge.svg)](https://github.com/AkshaySwami14/pg-schema-scout/actions/workflows/ci.yml)
+[![CI](https://github.com/akshayyswami/postgres-schema-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/akshayyswami/postgres-schema-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![MCP 2026-07-28](https://img.shields.io/badge/MCP-2026--07--28-blue.svg)](https://modelcontextprotocol.io)
 
@@ -54,8 +54,8 @@ Then point your MCP client at it:
 ```json
 {
   "mcpServers": {
-    "pg-schema-scout": {
-      "command": "pg-schema-scout",
+    "postgres-schema-mcp": {
+      "command": "postgres-schema-mcp",
       "env": {
         "PGSS_DSN": "postgresql://scout_ro:scout_ro_pw@localhost:55432/adventureworks"
       }
@@ -64,7 +64,7 @@ Then point your MCP client at it:
 }
 ```
 
-stdio by default. `pg-schema-scout --http` serves Streamable HTTP on port 3000 instead.
+stdio by default. `postgres-schema-mcp --http` serves Streamable HTTP on port 3000 instead.
 
 The credentials above are for a local throwaway container holding public sample data. There
 are no real credentials in this repo.
@@ -347,7 +347,7 @@ pytest -m "not db"          # skip anything needing Postgres
 python evals/run_evals.py   # fault matrix + retrieval, non-zero exit on regression
 python evals/measure_context.py
 ruff check . && mypy
-mcp dev src/pg_schema_scout/server.py   # Inspector
+mcp dev src/postgres_schema_mcp/server.py   # Inspector
 ```
 
 CI runs ruff, ruff format, mypy, pytest and the evals, with the seeded database as a compose

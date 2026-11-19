@@ -28,8 +28,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pg_schema_scout.db import Database
-from pg_schema_scout.retrieval import SchemaIndex, count_tokens, tokenizer_name
+from postgres_schema_mcp.db import Database
+from postgres_schema_mcp.retrieval import SchemaIndex, count_tokens, tokenizer_name
 
 EVALS = Path(__file__).resolve().parent
 

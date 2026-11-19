@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from pg_schema_scout.retrieval import (
+from postgres_schema_mcp.retrieval import (
     BM25Backend,
     SchemaIndex,
     TitanBackend,
@@ -23,7 +23,7 @@ from pg_schema_scout.retrieval import (
     tokenize,
     tokenizer_name,
 )
-from pg_schema_scout.types import ColumnInfo, ForeignKey, TableDetail
+from postgres_schema_mcp.types import ColumnInfo, ForeignKey, TableDetail
 
 
 def make_table(
