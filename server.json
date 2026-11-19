@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.akshayyswami/postgres-schema-mcp",
+  "description": "Schema access for an agent is a retrieval problem, not a dump.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/akshayyswami/postgres-schema-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "postgres-schema-mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" }
+    }
+  ]
+}
