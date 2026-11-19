@@ -1,0 +1,175 @@
+{
+  "baseline": {
+    "conformance": {
+      "command": "npx @modelcontextprotocol/conformance@0.1.16 server --url http://localhost:3000/mcp",
+      "failed": 21,
+      "passed": 11,
+      "recorded": "2026-08-07",
+      "source": "Result copied from the README as committed on 2026-08-07. Not wired into CI: it would need a baseline of 21 expected failures, which hides regressions instead of catching them.",
+      "tool": "@modelcontextprotocol/conformance",
+      "version": "0.1.16"
+    },
+    "titan": {
+      "invocations": 94,
+      "k": 8,
+      "model_id": "amazon.titan-embed-text-v2:0",
+      "questions": 26,
+      "recorded": "2026-08-07",
+      "service": "Amazon Bedrock",
+      "source": "Figures from the commit that measured Titan against Bedrock on 2026-08-07, copied from that commit's README. Not re-run since: CI has no AWS credentials, so these are recorded, not re-measured.",
+      "with_fk": {
+        "complete": 22,
+        "neighbour_weight": 0.35,
+        "precision": 0.255,
+        "recall": 0.926
+      },
+      "without_fk": {
+        "complete": 17,
+        "neighbour_weight": 0.0,
+        "precision": 0.226,
+        "recall": 0.833
+      }
+    }
+  },
+  "context": {
+    "backend": "bm25",
+    "fewer_tokens": 0.8338,
+    "full_schema_tokens": 10927,
+    "k": 8,
+    "questions": 26,
+    "reduction_x": 6.0168,
+    "schemas": 5,
+    "tables": 68,
+    "tokenizer": "tiktoken/cl100k_base"
+  },
+  "faults": {
+    "must_allow_passed": 9,
+    "must_allow_total": 9,
+    "must_block_caught": 12,
+    "must_block_total": 12
+  },
+  "fk_sweep": [
+    {
+      "complete": 17,
+      "incomplete": 9,
+      "missed": [
+        {
+          "count": 4,
+          "table": "production.product"
+        },
+        {
+          "count": 2,
+          "table": "person.person"
+        },
+        {
+          "count": 1,
+          "table": "humanresources.employee"
+        }
+      ],
+      "neighbour_weight": 0.0,
+      "precision_at_k": 0.226,
+      "recall_at_k": 0.8397,
+      "reduction_x": 6.4905,
+      "slice_tokens_mean": 1683.5385
+    },
+    {
+      "complete": 24,
+      "incomplete": 2,
+      "missed": [
+        {
+          "count": 1,
+          "table": "person.address"
+        },
+        {
+          "count": 1,
+          "table": "person.businessentityaddress"
+        },
+        {
+          "count": 1,
+          "table": "production.product"
+        }
+      ],
+      "neighbour_weight": 0.25,
+      "precision_at_k": 0.2596,
+      "recall_at_k": 0.9551,
+      "reduction_x": 6.0694,
+      "slice_tokens_mean": 1800.3462
+    },
+    {
+      "complete": 24,
+      "incomplete": 2,
+      "missed": [
+        {
+          "count": 1,
+          "table": "person.address"
+        },
+        {
+          "count": 1,
+          "table": "person.businessentityaddress"
+        },
+        {
+          "count": 1,
+          "table": "production.product"
+        }
+      ],
+      "neighbour_weight": 0.35,
+      "precision_at_k": 0.2596,
+      "recall_at_k": 0.9551,
+      "reduction_x": 6.0168,
+      "slice_tokens_mean": 1816.0769
+    },
+    {
+      "complete": 24,
+      "incomplete": 2,
+      "missed": [
+        {
+          "count": 1,
+          "table": "person.address"
+        },
+        {
+          "count": 1,
+          "table": "person.businessentityaddress"
+        },
+        {
+          "count": 1,
+          "table": "sales.salesorderdetail"
+        }
+      ],
+      "neighbour_weight": 0.5,
+      "precision_at_k": 0.2644,
+      "recall_at_k": 0.9647,
+      "reduction_x": 5.8612,
+      "slice_tokens_mean": 1864.3077
+    }
+  ],
+  "retrieval": {
+    "complete": 24,
+    "complete_fraction": 0.9231,
+    "incomplete": 2,
+    "incomplete_questions": [
+      "reseller-locations",
+      "revenue-by-category"
+    ],
+    "missed": [
+      {
+        "count": 1,
+        "table": "person.address"
+      },
+      {
+        "count": 1,
+        "table": "person.businessentityaddress"
+      },
+      {
+        "count": 1,
+        "table": "production.product"
+      }
+    ],
+    "precision_at_k": 0.2596,
+    "questions": 26,
+    "recall_at_k": 0.9551,
+    "slice_tokens_max": 2368,
+    "slice_tokens_mean": 1816.0769,
+    "slice_tokens_median": 1858.0,
+    "slice_tokens_min": 1071
+  }
+}

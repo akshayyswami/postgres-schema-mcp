@@ -5,7 +5,7 @@ Postgres as scout_ro. That is the entire point: if the AST policy had a bug
 tomorrow, these are the errors that would still come back. A test that went
 through the guard would only be testing the guard twice.
 
-Requires the seeded container (`docker compose up -d`). Marked `db`, so
+Requires the seeded container (`make db`). Marked `db`, so
 `pytest -m "not db"` skips the whole module.
 """
 
@@ -19,17 +19,6 @@ import pytest
 from postgres_schema_mcp.adapters.db import Settings
 
 pytestmark = pytest.mark.db
-
-
-@pytest.fixture(scope="module")
-def dsn() -> str:
-    settings = Settings()
-    try:
-        with psycopg.connect(settings.dsn, connect_timeout=5) as conn, conn.cursor() as cur:
-            cur.execute("SELECT 1")
-    except Exception as exc:
-        pytest.skip(f"seeded database not reachable ({exc}); run `docker compose up -d`")
-    return settings.dsn
 
 
 @pytest.fixture

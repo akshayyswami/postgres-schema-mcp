@@ -1,0 +1,11 @@
+{
+  "recorded": "2026-08-07",
+  "service": "Amazon Bedrock",
+  "model_id": "amazon.titan-embed-text-v2:0",
+  "invocations": 94,
+  "questions": 26,
+  "k": 8,
+  "source": "Figures from the commit that measured Titan against Bedrock on 2026-08-07, copied from that commit's README. Not re-run since: CI has no AWS credentials, so these are recorded, not re-measured.",
+  "with_fk": { "neighbour_weight": 0.35, "recall": 0.926, "precision": 0.255, "complete": 22 },
+  "without_fk": { "neighbour_weight": 0.0, "recall": 0.833, "precision": 0.226, "complete": 17 }
+}

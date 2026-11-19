@@ -1,0 +1,9 @@
+{
+  "recorded": "2026-08-07",
+  "tool": "@modelcontextprotocol/conformance",
+  "version": "0.1.16",
+  "command": "npx @modelcontextprotocol/conformance@0.1.16 server --url http://localhost:3000/mcp",
+  "passed": 11,
+  "failed": 21,
+  "source": "Result copied from the README as committed on 2026-08-07. Not wired into CI: it would need a baseline of 21 expected failures, which hides regressions instead of catching them."
+}

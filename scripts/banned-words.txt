@@ -1,0 +1,9 @@
+# One banned word per line. Whole words, any case. Lines starting with # are ignored.
+# Kept in a text file, not a markdown doc, so docs about the rule do not break it.
+leverage
+robust
+seamless
+cutting-edge
+streamlined
+transformative
+revolutionary
