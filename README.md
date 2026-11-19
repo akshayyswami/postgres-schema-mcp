@@ -230,3 +230,5 @@ Inspect the server with `mcp dev src/postgres_schema_mcp/server.py`. Design deci
 ## License
 
 MIT. The AdventureWorks sample data is Microsoft's, downloaded at build time and not redistributed here. The frozen schema in `evals/fixtures/` holds table and column metadata, not rows.
+
+Not affiliated with the PostgreSQL project, Microsoft or the Model Context Protocol maintainers.
