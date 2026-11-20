@@ -8,6 +8,8 @@
 
 An MCP server that gives an AI agent the relevant slice of a wide Postgres schema instead of all of it, and enforces read-only in three layers rather than annotating it.
 
+![Terminal demo: one question retrieves a small slice of the schema, and the read-only guard blocks a DELETE hidden inside a CTE.](docs/demo.gif)
+
 ---
 
 ## The number

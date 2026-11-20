@@ -17,6 +17,7 @@ First release, not yet tagged.
 - A frozen copy of the schema in `evals/fixtures/catalog.json`, so figures are measured without a database and checked against a freshly seeded one.
 - README figures wrapped in eval markers that CI checks against `evals/results/latest.json`.
 - `server.json` for the MCP Registry.
+- A terminal demo in the README. `docs/demo.tape` records it with `vhs`, and `evals/demo.py` is what it runs, offline.
 
 ### Changed
 
