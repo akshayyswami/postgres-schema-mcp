@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: adventureworks
     ports:
-      - "${PGSS_PORT:-55432}:5432"
+      - "127.0.0.1:${PGSS_PORT:-55432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

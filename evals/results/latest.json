@@ -43,10 +43,10 @@
     "tokenizer": "tiktoken/cl100k_base"
   },
   "faults": {
-    "must_allow_passed": 9,
-    "must_allow_total": 9,
-    "must_block_caught": 12,
-    "must_block_total": 12
+    "must_allow_passed": 12,
+    "must_allow_total": 12,
+    "must_block_caught": 21,
+    "must_block_total": 21
   },
   "fk_sweep": [
     {

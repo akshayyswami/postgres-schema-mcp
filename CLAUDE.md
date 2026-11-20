@@ -29,4 +29,4 @@ Read first: `docs/SPEC.md` for scope and milestones, `docs/architecture.md` for 
 
 ## Current milestone
 
-M4: v0.1.0. The tooling and docs are done. The tag, the GitHub Release and the MCP Registry entry are not.
+M4: v0.1.0. The tooling, docs and pre-release security review are done. The tag, the GitHub Release, PyPI and the MCP Registry entry need Akshay's go, each.

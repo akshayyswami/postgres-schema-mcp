@@ -59,6 +59,54 @@ must_block:
     sql: "GRANT ALL ON customer TO PUBLIC;"
     reason: privilege escalation
 
+  # Found by the pre-release security review. The first four are the same call as
+  # file-read and dblink above, written so a text match on the name misses it.
+  - id: quoted-function-name
+    sql: "SELECT \"pg_sleep\"(10);"
+    reason: >-
+      a double-quoted function name. The name was compared as a node, not as text,
+      so the quotes hid it from the denylist
+
+  - id: quoted-qualified-function-name
+    sql: "SELECT pg_catalog.\"set_config\"('statement_timeout', '0', false);"
+    reason: >-
+      quoted and schema-qualified. set_config can switch off the statement timeout
+      for the rest of the session
+
+  - id: quoted-function-in-table-position
+    sql: "SELECT * FROM \"pg_read_file\"('/etc/passwd');"
+    reason: a quoted filesystem function used as a table source
+
+  - id: unicode-escaped-function-name
+    sql: "SELECT U&\"pg_sl\\0065ep\"(10);"
+    reason: >-
+      the name is written with a Unicode escape, so PostgreSQL calls pg_sleep while
+      the text says something else. A name that is not a plain identifier is refused
+
+  - id: session-advisory-lock
+    sql: "SELECT pg_advisory_lock(1);"
+    reason: >-
+      a session-level lock outlives the statement on a pooled connection, so it is a
+      write in effect even though it is a SELECT
+
+  - id: sequence-advance
+    sql: "SELECT nextval('person.businessentity_businessentityid_seq');"
+    reason: advances a sequence, which is a write
+
+  - id: large-object-create
+    sql: "SELECT lo_creat(-1);"
+    reason: creates a large object. The whole lo_ family is refused by prefix
+
+  - id: notify-from-select
+    sql: "SELECT pg_notify('channel', 'payload');"
+    reason: sends a notification to every listener
+
+  - id: sql-string-executor
+    sql: "SELECT * FROM crosstab('SELECT pg_sleep(100)') AS t(a text);"
+    reason: >-
+      crosstab runs the SQL string it is given, outside this policy. query_to_xml,
+      listed above, is the same shape
+
 must_allow:
   - id: plain-select
     sql: "SELECT firstname FROM person.person LIMIT 10;"
@@ -120,3 +168,16 @@ must_allow:
   - id: ddl-keyword-inside-comment
     sql: "/* DROP TABLE customer */ SELECT count(*) FROM person.person; -- DELETE FROM x"
     note: keyword appears only in comments
+
+  # Mirror image of the faults above: quoting and look-alike names that are fine.
+  - id: quoted-identifiers
+    sql: 'SELECT "firstname" AS "First Name" FROM "person"."person" LIMIT 5;'
+    note: quoted columns, tables and aliases are not function calls
+
+  - id: function-name-inside-string-literal
+    sql: "SELECT 'pg_sleep(10)' AS harmless_text FROM person.person LIMIT 1;"
+    note: a denied function name that appears only in a string literal
+
+  - id: look-alike-function-names
+    sql: "SELECT lower(firstname), upper(lastname), lpad(firstname, 12) FROM person.person LIMIT 3;"
+    note: lower, upper and lpad start like the refused lo_ prefix but are ordinary

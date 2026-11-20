@@ -64,3 +64,24 @@ One entry per decision that changes architecture or scope. Newest first.
 - **`Decimal` is returned as a string.** These are money and quantity columns, and a silent rounding is worse than a visible type change.
 - **Sample data is downloaded at image build time**, not vendored, so no 40 MB blob lives in git. The loader scripts are pinned by commit SHA and the data to Microsoft's release asset.
 - **`server.py` uses absolute imports.** `mcp dev` loads the file by path, and relative imports fail under that loader.
+
+## 2026-11-20: Pre-release security review, and what it changed
+
+- **Decision:** before tagging v0.1.0, a reviewer read the whole code base with no database and no network. Findings that were reproduced against the real code were fixed and given planted faults. The rest were fixed from reading, or recorded here.
+- **Found and fixed, reproduced:**
+  - A double-quoted function name (`"pg_sleep"(1)`, `pg_catalog."set_config"(...)`) bypassed the denylist, because the name was compared as a node, not as text. All 42 denylisted names were allowed when quoted. The `U&"..."` escape form did too. Names are now compared unquoted and any name that is not a plain identifier is refused.
+  - Side-effect functions outside the list ran inside a SELECT: advisory locks, `nextval`, `pg_notify`, large objects, and `crosstab`, which runs an SQL string outside the policy. The list is now exact names plus prefix families, so a function this list missed or a later PostgreSQL release adds is still caught. The cost is that a user function with such a prefix is refused too.
+  - The "explicit read-only transaction" claim was false: psycopg sent a plain `BEGIN`, so only the session default applied, and a query could flip that with `set_config(..., false)`. Each connection is now configured so every transaction is `BEGIN READ ONLY`, and a connection is reset with `DISCARD ALL` on return to the pool.
+  - Row and size caps applied after the result was in memory. Rows now come from a server-side cursor in batches, with a row cap, a per-cell cap and a total size cap. The cursor also forces the extended protocol, where PostgreSQL itself refuses a second statement.
+  - HTTP mode had no Host or Origin checks off loopback and no authentication. A non-loopback bind is now refused unless `PGSS_ALLOW_REMOTE=1`.
+  - The release workflow did not check the tag against the version or that it was on `main`, and pinned actions by mutable tag. It now checks both, and every action is pinned by commit SHA.
+- **Database role tightened:** `init/20-grants.sql` revokes `EXECUTE` on the same functions from `PUBLIC`, and gives `scout_ro` a connection limit and a temp-file limit. A name the guard missed is then refused by the database, and the tests check that.
+- **Smaller fixes:** the DSN is hidden from `repr(Settings())`; database comments are joined onto one line and capped at 300 characters, and the instructions tell the model that comments and rows are untrusted; the demo database port binds to 127.0.0.1; the sdist leaves out `CLAUDE.md`, `.claude/` and `.github/`.
+- **Accepted, not fixed:**
+  - `PGSS_SCHEMAS` limits what is indexed and shown, not what the role can read. SECURITY.md now says so. A role with narrower grants is the control.
+  - A single very large cell is still read into memory before it is cut, because the cut is applied to the fetched row. The statement timeout and the per-batch fetch bound it, and the output is cut either way.
+  - A query that materializes a huge set in a `FROM` clause, such as `SELECT * FROM generate_series(1, 1000000000)`, spills to disk until the shipped role's `temp_file_limit` stops it. On a role without that limit it runs until the statement timeout.
+  - An unset `PGSS_DSN` still falls back to the local demo database. The README Quickstart sets it explicitly.
+  - The demo database image downloads its sample data at build time with no checksum, and the base image is pinned by tag, not digest.
+  - Local refs `backup/pre-rewrite` and `refs/original/refs/heads/main` hold commits with attribution trailers from an earlier history rewrite. They are not on any remote. Pushes in this repo name their refs, never `--all` or `--mirror`.
+- **Alternatives:** an allowlist of known-safe functions instead of a denylist (stronger, but it refuses a lot of ordinary SQL, and a general query tool needs those functions); dropping the denylist and relying on the role alone (the role is the layer that holds, but a parser layer gives the model a clear error and stops a bad query before the database sees it).

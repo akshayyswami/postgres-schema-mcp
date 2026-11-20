@@ -34,7 +34,7 @@ src/postgres_schema_mcp/
 
 ## One request
 
-`search_schema` ranks the in-memory index and never touches the database after start-up. `run_query` and `explain_query` pass the SQL through `core/guard.py` first, then run it on a pooled connection as the `scout_ro` role, in an explicit read-only transaction, with a statement timeout and a row cap. A rejected statement never reaches the database.
+`search_schema` ranks the in-memory index and never touches the database after start-up. `run_query` and `explain_query` pass the SQL through `core/guard.py` first, then run it on a pooled connection as the `scout_ro` role, in an explicit `BEGIN READ ONLY` transaction over a server-side cursor, with a statement timeout, a row cap and size caps. The connection is reset when it returns to the pool. A rejected statement never reaches the database.
 
 ## Where the numbers come from
 

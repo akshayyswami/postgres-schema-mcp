@@ -220,6 +220,7 @@ def test_main_serves_streamable_http_with_the_http_flag(monkeypatch: pytest.Monk
     calls = _record_run(monkeypatch)
     monkeypatch.setattr(sys, "argv", ["postgres-schema-mcp", "--http"])
     monkeypatch.setenv("PGSS_HOST", "0.0.0.0")  # noqa: S104
+    monkeypatch.setenv("PGSS_ALLOW_REMOTE", "1")
     monkeypatch.setenv("PGSS_PORT_HTTP", "3999")
     server.main()
     assert calls == [{"transport": "streamable-http", "host": "0.0.0.0", "port": 3999}]  # noqa: S104
@@ -233,3 +234,41 @@ def test_main_http_defaults_to_localhost(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("PGSS_PORT_HTTP", raising=False)
     server.main()
     assert calls == [{"transport": "streamable-http", "host": "127.0.0.1", "port": 3000}]
+
+
+# --- the HTTP transport has no authentication, so a non-loopback bind needs an opt-in ---
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
+def test_http_on_loopback_is_allowed(host: str) -> None:
+    assert server.remote_bind_refusal(host, None) is None
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.20", "example.test"])  # noqa: S104
+def test_http_off_loopback_is_refused_without_the_opt_in(host: str) -> None:
+    message = server.remote_bind_refusal(host, None)
+    assert message is not None
+    assert "PGSS_ALLOW_REMOTE=1" in message
+    assert server.remote_bind_refusal(host, "0") is not None
+
+
+def test_http_off_loopback_is_allowed_with_the_opt_in() -> None:
+    assert server.remote_bind_refusal("0.0.0.0", "1") is None  # noqa: S104
+
+
+def test_main_exits_before_serving_when_the_bind_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["postgres-schema-mcp", "--http"])
+    monkeypatch.setenv("PGSS_HOST", "0.0.0.0")  # noqa: S104
+    monkeypatch.delenv("PGSS_ALLOW_REMOTE", raising=False)
+    served: list[object] = []
+    monkeypatch.setattr(server.mcp, "run", lambda **kwargs: served.append(kwargs))
+    with pytest.raises(SystemExit) as exc:
+        server.main()
+    assert "PGSS_ALLOW_REMOTE" in str(exc.value)
+    assert served == []
+
+
+def test_instructions_tell_the_model_that_database_text_is_untrusted() -> None:
+    assert "untrusted" in server.INSTRUCTIONS

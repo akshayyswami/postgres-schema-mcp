@@ -7,16 +7,21 @@ belt-and-braces on top of a role that already cannot write:
 
   * `default_transaction_read_only=on` at the session level, so every
     transaction is READ ONLY without the caller having to remember;
-  * an explicit read-only transaction around each query;
+  * an explicit `BEGIN READ ONLY` around each query (the pool's `configure` step sets
+    it on every connection), which a query cannot switch off from inside the transaction;
+  * a connection reset when a connection goes back to the pool, so a session-level lock
+    or setting left by one request is gone before the next;
   * `statement_timeout`, so a legitimate but expensive query cannot become a
     denial of service;
   * `idle_in_transaction_session_timeout`, so a wedged client cannot hold locks;
-  * a row cap, with the truncation reported to the model rather than hidden.
+  * a server-side cursor read in small batches, a row cap, a per-cell cap and a total
+    size cap, with the truncation reported to the model rather than hidden.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -52,7 +57,8 @@ def _env_int(name: str, default: int) -> int:
 class Settings:
     """Runtime configuration, all overridable by environment variable."""
 
-    dsn: str = field(default_factory=lambda: os.environ.get("PGSS_DSN", DEFAULT_DSN))
+    # repr=False: a DSN carries the password, and a repr ends up in logs and tracebacks.
+    dsn: str = field(default_factory=lambda: os.environ.get("PGSS_DSN", DEFAULT_DSN), repr=False)
     schemas: tuple[str, ...] = field(
         default_factory=lambda: tuple(
             s.strip()
@@ -68,6 +74,12 @@ class Settings:
     )
     # Hard ceiling on max_rows, regardless of what the caller asks for.
     max_rows_cap: int = field(default_factory=lambda: _env_int("PGSS_MAX_ROWS_CAP", 1_000))
+    # A string cell longer than this is cut, with a marker that says how much was dropped.
+    max_cell_chars: int = field(default_factory=lambda: _env_int("PGSS_MAX_CELL_CHARS", 2_000))
+    # Ceiling on the JSON size of all rows returned for one query.
+    max_result_bytes: int = field(
+        default_factory=lambda: _env_int("PGSS_MAX_RESULT_BYTES", 200_000)
+    )
     pool_min_size: int = field(default_factory=lambda: _env_int("PGSS_POOL_MIN", 1))
     pool_max_size: int = field(default_factory=lambda: _env_int("PGSS_POOL_MAX", 4))
 
@@ -111,6 +123,40 @@ def _jsonable(value: Any) -> Any:
             return {str(k): _jsonable(v) for k, v in value.items()}
         case _:
             return str(value)
+
+
+# Rows are pulled from the server in batches of this size.
+_FETCH_BATCH = 200
+
+
+def _clip(value: Any, limit: int) -> tuple[Any, bool]:
+    """Cut a long string to `limit` characters. Returns the value and whether it was cut."""
+    if isinstance(value, str) and len(value) > limit:
+        return f"{value[:limit]}... [{len(value) - limit} more characters]", True
+    return value, False
+
+
+async def _configure(conn: psycopg.AsyncConnection[Any]) -> None:
+    """Runs once per new connection. Every transaction on it then starts as BEGIN READ ONLY.
+
+    A query can change the session default with set_config('default_transaction_read_only',
+    'off', false). It cannot change a transaction that was started read only.
+    """
+    await conn.set_read_only(True)
+
+
+async def _reset(conn: psycopg.AsyncConnection[Any]) -> None:
+    """Runs when a connection goes back to the pool. Forgets what the last query left behind.
+
+    DISCARD ALL drops session-level advisory locks and any session setting a query changed.
+    The options passed at connect time (timeouts, read-only default) are the session
+    defaults, so they come back as they were.
+    """
+    await conn.set_autocommit(True)  # DISCARD cannot run inside a transaction block
+    try:
+        await conn.execute("DISCARD ALL")
+    finally:
+        await conn.set_autocommit(False)
 
 
 _COLUMNS_SQL = """
@@ -190,6 +236,8 @@ class Database:
             min_size=self.settings.pool_min_size,
             max_size=self.settings.pool_max_size,
             kwargs={"options": self.settings.session_options, "row_factory": tuple_row},
+            configure=_configure,
+            reset=_reset,
             open=False,
         )
         await pool.open(wait=True, timeout=30)
@@ -212,35 +260,68 @@ class Database:
         The caller is responsible for having passed `sql` through guard.py first.
         """
         limit = max(1, min(max_rows, self.settings.max_rows_cap))
-        # conn.transaction() is an explicit read-only transaction, on top of the
-        # session-level default_transaction_read_only.
-        async with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+        fetched: list[tuple[Any, ...]] = []
+        # The pool's configure step makes this transaction BEGIN READ ONLY.
+        #
+        # The cursor is a server-side cursor: rows come in small batches, so a query that
+        # matches a billion rows costs a few batches, not the whole result in memory. It also
+        # sends the statement through the extended protocol, where PostgreSQL refuses a second
+        # statement, which is a check that does not depend on the parser.
+        async with (
+            self.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor(name="pgss_query") as cur,
+        ):
             await cur.execute(psycopg.sql.SQL(sql))
-            if cur.description is None:
-                return QueryResult(
-                    columns=[],
-                    rows=[],
-                    row_count=0,
-                    truncated=False,
-                    note="The statement returned no result set.",
-                )
-            columns = [d.name for d in cur.description]
-            # Fetch one extra row: that is how truncation is detected without
-            # a second COUNT query.
-            fetched = await cur.fetchmany(limit + 1)
+            columns = [d.name for d in cur.description or ()]
+            # One row more than the limit: that is how truncation is detected without a
+            # second COUNT query.
+            while len(fetched) <= limit:
+                batch = await cur.fetchmany(min(_FETCH_BATCH, limit + 1 - len(fetched)))
+                if not batch:
+                    break
+                fetched.extend(batch)
 
-        truncated = len(fetched) > limit
-        rows = [[_jsonable(v) for v in row] for row in fetched[:limit]]
-        note = None
-        if truncated:
-            note = (
+        rows: list[list[Any]] = []
+        size = 0
+        clipped = False
+        over_budget = False
+        for raw in fetched[:limit]:
+            row: list[Any] = []
+            for value in raw:
+                cell, was_clipped = _clip(_jsonable(value), self.settings.max_cell_chars)
+                clipped = clipped or was_clipped
+                row.append(cell)
+            size += len(json.dumps(row, ensure_ascii=False, default=str))
+            if size > self.settings.max_result_bytes:
+                over_budget = True
+                break
+            rows.append(row)
+
+        truncated = len(fetched) > limit or over_budget
+        notes: list[str] = []
+        if len(fetched) > limit:
+            notes.append(
                 f"Truncated to {limit} rows; more rows matched. This is a display limit, not the "
                 "full answer. To see the rest, narrow the query: add a WHERE clause, aggregate "
                 "with GROUP BY, or raise max_rows (capped at "
                 f"{self.settings.max_rows_cap})."
             )
+        if over_budget:
+            notes.append(
+                f"Output stopped at {len(rows)} rows because the result passed "
+                f"{self.settings.max_result_bytes} bytes. Select fewer or narrower columns."
+            )
+        if clipped:
+            notes.append(
+                f"Text longer than {self.settings.max_cell_chars} characters was cut and marked."
+            )
         return QueryResult(
-            columns=columns, rows=rows, row_count=len(rows), truncated=truncated, note=note
+            columns=columns,
+            rows=rows,
+            row_count=len(rows),
+            truncated=truncated,
+            note=" ".join(notes) or None,
         )
 
     async def explain(self, sql: str) -> QueryPlan:

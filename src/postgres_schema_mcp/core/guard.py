@@ -24,12 +24,13 @@ holds only SELECT, because a parser bug here should not be a write there.
 
 from __future__ import annotations
 
+import re
 from typing import Final
 
 import sqlglot
 from sqlglot import exp
 
-__all__ = ["DENYLISTED_FUNCTIONS", "BlockedQueryError", "check_read_only"]
+__all__ = ["DENYLISTED_FUNCTIONS", "DENYLISTED_PREFIXES", "BlockedQueryError", "check_read_only"]
 
 _DIALECT: Final = "postgres"
 
@@ -133,8 +134,56 @@ DENYLISTED_FUNCTIONS: Final[frozenset[str]] = frozenset(
         "pg_backup_stop",
         "set_config",
         "pg_logical_emit_message",
+        "pg_notify",
+        "pg_import_system_collations",
+        "pg_start_backup",
+        "pg_stop_backup",
+        # Change database state although they sit inside a SELECT
+        "nextval",
+        "setval",
+        "txid_current",
+        "pg_current_xact_id",
+        "loread",
+        "lowrite",
+        # Execute an SQL string passed as an argument, outside this policy
+        "cursor_to_xml",
+        "cursor_to_xmlschema",
+        "connectby",
+        "ts_stat",
+        "xpath_table",
     }
 )
+
+# Whole families of functions. A name that starts with one of these is refused, so a
+# function added in a later PostgreSQL release, or one this list missed, is still caught.
+# The cost is that a user function with such a prefix is refused too.
+DENYLISTED_PREFIXES: Final[tuple[str, ...]] = (
+    "lo_",  # large objects: filesystem access and writes
+    "dblink",  # network egress and remote execution
+    "http_",  # network egress
+    "crosstab",  # tablefunc: runs an SQL string passed as an argument
+    "pg_sleep",  # denial of service
+    "pg_advisory_",  # session-level locks outlive the statement on a pooled connection
+    "pg_try_advisory_",
+    "pg_read_",  # filesystem
+    "pg_ls_",
+    "pg_file_",
+    "pg_replication_",  # replication slots and origins
+    "pg_create_",
+    "pg_drop_",
+    "pg_copy_",
+    "pg_stat_reset",  # clears statistics
+    "pg_set_",
+    "pg_clear_",
+    "pg_wal_replay",
+    "pg_log_",  # writes to the server log
+    "pg_logical_",
+)
+
+# A function name that is not a plain identifier cannot be matched against a list of
+# plain names, so it is refused. This covers U&"..." escapes, where the name PostgreSQL
+# calls is not the text that was written.
+_PLAIN_NAME: Final = re.compile(r"[a-z_][a-z0-9_$]*")
 
 # A statement is acceptable only if its root is one of these.
 _ALLOWED_ROOTS: Final[tuple[type[exp.Expr], ...]] = (
@@ -150,8 +199,10 @@ def _function_names(node: exp.Expr) -> list[str]:
     """Every name by which this node might be a denylisted function call."""
     names: list[str] = []
     if isinstance(node, exp.Anonymous):
-        # Unknown-to-sqlglot function: the raw identifier, case as written.
-        names.append(str(node.this))
+        # Unknown-to-sqlglot function. `name` is the text without quotes, so
+        # "pg_sleep"(1) and pg_sleep(1) give the same name. `str(node.this)` is not
+        # that: for a quoted name it is an Identifier node and never matches.
+        names.append(node.name)
     elif isinstance(node, exp.Func):
         # Known function: compare on sqlglot's canonical name.
         names.append(node.sql_name())
@@ -206,8 +257,13 @@ def check_read_only(sql: str) -> None:
                 )
 
         for name in _function_names(node):
-            if name in DENYLISTED_FUNCTIONS:
+            if _PLAIN_NAME.fullmatch(name) is None:
+                raise BlockedQueryError(
+                    "the statement calls a function whose name is not a plain identifier "
+                    '(for example one written with U&"..." escapes), so it cannot be checked.'
+                )
+            if name in DENYLISTED_FUNCTIONS or name.startswith(DENYLISTED_PREFIXES):
                 raise BlockedQueryError(
                     f"the statement calls {name}(), which is not permitted "
-                    "(filesystem, network, administrative or denial-of-service function)."
+                    "(filesystem, network, administrative, locking or denial-of-service function)."
                 )

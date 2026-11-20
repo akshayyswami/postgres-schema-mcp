@@ -5,9 +5,11 @@ setup:
 	uv run pre-commit install
 
 # The seeded Postgres the integration tests and the live evals run against. The first
-# run builds the image and seeds AdventureWorks, which takes a few minutes.
+# run builds the image and seeds AdventureWorks, which takes a few minutes. --build makes
+# a change under init/ reach the image; with nothing changed the build is all cache hits.
+# An existing volume is not re-seeded: after changing init/, run `docker compose down -v`.
 db:
-	docker compose up -d --wait --wait-timeout 900
+	docker compose up -d --build --wait --wait-timeout 900
 
 fmt:
 	uv run ruff format .

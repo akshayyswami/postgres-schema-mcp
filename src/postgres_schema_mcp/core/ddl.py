@@ -6,6 +6,21 @@ from .types import TableDetail
 
 __all__ = ["render_ddl"]
 
+_MAX_COMMENT_CHARS = 300
+
+
+def _one_line(comment: str) -> str:
+    """A database comment as one short line.
+
+    A comment is text anyone with COMMENT privilege wrote, and it is shown to the model
+    inside the DDL. A line break would let it start a line of its own that reads like part
+    of the schema, so line breaks become spaces and the length is capped.
+    """
+    text = " ".join(comment.splitlines())
+    if len(text) > _MAX_COMMENT_CHARS:
+        text = text[:_MAX_COMMENT_CHARS] + "..."
+    return text
+
 
 def render_ddl(table: TableDetail) -> str:
     """A CREATE TABLE rendering of a table, for the model to read.
@@ -20,7 +35,7 @@ def render_ddl(table: TableDetail) -> str:
         if not col.nullable:
             piece += " NOT NULL"
         if col.comment:
-            piece += f"  -- {col.comment}"
+            piece += f"  -- {_one_line(col.comment)}"
         body.append(piece)
     if table.primary_key:
         body.append(f"    PRIMARY KEY ({', '.join(table.primary_key)})")
@@ -33,5 +48,5 @@ def render_ddl(table: TableDetail) -> str:
     lines.append(",\n".join(body))
     lines.append(");")
     if table.comment:
-        lines.append(f"-- {table.comment}")
+        lines.append(f"-- {_one_line(table.comment)}")
     return "\n".join(lines)

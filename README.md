@@ -8,6 +8,8 @@
 
 An MCP server that gives an AI agent the relevant slice of a wide Postgres schema instead of all of it, and enforces read-only in three layers rather than annotating it.
 
+<!-- mcp-name: io.github.akshayyswami/postgres-schema-mcp -->
+
 ![Terminal demo: one question retrieves a small slice of the schema, and the read-only guard blocks a DELETE hidden inside a CTE.](docs/demo.gif)
 
 ---
@@ -57,6 +59,8 @@ Then point your MCP client at it:
   }
 }
 ```
+
+The package is also on PyPI, so a client can run it without a clone. Set `"command": "uvx"` and `"args": ["postgres-schema-mcp"]`, with the same `env`, and point `PGSS_DSN` at your own database through a role that can only `SELECT`.
 
 stdio by default. `postgres-schema-mcp --http` serves Streamable HTTP on port 3000 instead. The credentials above belong to a local throwaway container holding public sample data. There are no real credentials in this repo.
 
@@ -135,7 +139,9 @@ A rejected query returns HTTP 200 with a JSON-RPC result carrying `isError: true
 
 #### Below the parser
 
-The server authenticates as `scout_ro`, which is granted `SELECT` and nothing else, with `TEMPORARY` revoked on the database and no `CREATE` on any schema. Sessions run with `default_transaction_read_only=on`, `statement_timeout` and `idle_in_transaction_session_timeout`, and every query runs in an explicit read-only transaction with a row cap.
+The server authenticates as `scout_ro`, which is granted `SELECT` and nothing else, with `TEMPORARY` revoked on the database and no `CREATE` on any schema. Every transaction starts as `BEGIN READ ONLY`, so a query that flips `default_transaction_read_only` for the session changes nothing. A connection is reset with `DISCARD ALL` when it goes back to the pool, so a lock or setting one request leaves behind is gone before the next. Sessions run with `statement_timeout` and `idle_in_transaction_session_timeout`. Rows are read from a server-side cursor in batches, with a row cap, a per-cell cap and a total size cap, and each cut is reported to the model.
+
+The seeded database goes one step further. `init/20-grants.sql` revokes `EXECUTE` from `PUBLIC` on the functions the guard refuses (`pg_sleep`, `set_config`, advisory locks, `nextval`, large objects, `crosstab`), and gives `scout_ro` a connection limit and a temp-file limit. A name the guard missed is then refused by the database. Point `PGSS_DSN` at your own database and you need to give that role the same limits yourself.
 
 [`tests/integration/test_readonly_role.py`](tests/integration/test_readonly_role.py) sends `DELETE`, `UPDATE`, `INSERT`, `TRUNCATE`, `DROP`, `ALTER`, `CREATE TABLE`, `CREATE TEMP TABLE`, `CREATE INDEX` and `GRANT` straight to Postgres, bypassing the guard, and asserts the database refuses each one. That test is the proof the bottom layer holds without the parser.
 
@@ -145,9 +151,9 @@ The server authenticates as `scout_ro`, which is granted `SELECT` and nothing el
 
 Everything below comes from `make evals` (offline) and `make evals-db` (against the seeded database), and both run in CI.
 
-**Fault matrix: <!-- eval:faults.must_block_caught -->12<!-- /eval -->/<!-- eval:faults.must_block_total -->12<!-- /eval --> blocked, <!-- eval:faults.must_allow_passed -->9<!-- /eval -->/<!-- eval:faults.must_allow_total -->9<!-- /eval --> allowed.**
+**Fault matrix: <!-- eval:faults.must_block_caught -->21<!-- /eval -->/<!-- eval:faults.must_block_total -->21<!-- /eval --> blocked, <!-- eval:faults.must_allow_passed -->12<!-- /eval -->/<!-- eval:faults.must_allow_total -->12<!-- /eval --> allowed.**
 
-Two-sided on purpose. The `must_allow` half is the half people skip, and it proves the guard is a guard and not a policy that refuses everything. `make evals-db` also executes all <!-- eval:faults.must_allow_total -->9<!-- /eval --> allowed queries against the database, so "allowed" means it actually runs.
+Two-sided on purpose. The `must_allow` half is the half people skip, and it proves the guard is a guard and not a policy that refuses everything. `make evals-db` also executes all <!-- eval:faults.must_allow_total -->12<!-- /eval --> allowed queries against the database, so "allowed" means it actually runs.
 
 **Retrieval: recall@<!-- eval:context.k -->8<!-- /eval --> <!-- eval:retrieval.recall_at_k:.3f -->0.955<!-- /eval -->, precision@<!-- eval:context.k -->8<!-- /eval --> <!-- eval:retrieval.precision_at_k:.3f -->0.260<!-- /eval -->, <!-- eval:retrieval.complete -->24<!-- /eval -->/<!-- eval:retrieval.questions -->26<!-- /eval --> questions with complete recall.**
 

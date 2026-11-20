@@ -4,10 +4,17 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
-First release, not yet tagged.
+## [0.1.0] - 2026-11-20
+
+First release.
 
 ### Added
 
+- The `mcp-name` line the MCP Registry reads in the README, and a `uvx postgres-schema-mcp` client config next to the clone-based one.
+- Result caps: rows are read from a server-side cursor in batches, with a row cap, a per-cell cap (`PGSS_MAX_CELL_CHARS`) and a total size cap (`PGSS_MAX_RESULT_BYTES`). Each cut is reported to the model.
+- A tighter database role, the third layer, in `init/20-grants.sql`: `EXECUTE` revoked from `PUBLIC` on the functions the guard refuses, and a connection limit and temp-file limit on `scout_ro`.
+- Nine planted faults and three clean inputs for the guard bypasses below. The matrix is 21 must-block and 12 must-allow.
+- The release workflow checks that the tag matches `pyproject.toml` and `server.json` and is on `main`, and every action is pinned by commit SHA.
 - Four MCP tools: `search_schema`, `describe_table`, `explain_query` and `run_query`.
 - Retrieval over one document per table with BM25, plus one damped round of score propagation across foreign keys.
 - Read-only enforced in three layers: tool annotations, an AST policy, and a `scout_ro` database role that holds only SELECT.
@@ -18,6 +25,16 @@ First release, not yet tagged.
 - README figures wrapped in eval markers that CI checks against `evals/results/latest.json`.
 - `server.json` for the MCP Registry.
 - A terminal demo in the README. `docs/demo.tape` records it with `vhs`, and `evals/demo.py` is what it runs, offline.
+
+### Security
+
+A review before this release found and fixed these. They are recorded in `docs/DECISIONS.md`.
+
+- A double-quoted function name (`"pg_sleep"(1)`) or a `U&"..."` escape bypassed the function denylist. Names are now compared unquoted, and a name that is not a plain identifier is refused.
+- Side-effect functions outside the list ran inside a SELECT: advisory locks, `nextval`, `pg_notify`, large objects and `crosstab`. The denylist now covers whole families by prefix.
+- Transactions were not explicitly read-only, so `set_config('default_transaction_read_only', 'off', false)` could change the session default. Every transaction is now `BEGIN READ ONLY`, and a connection is reset when it returns to the pool.
+- The HTTP transport refuses a non-loopback bind unless `PGSS_ALLOW_REMOTE=1`, because it has no authentication.
+- Database comments shown to the model are joined onto one line and capped, and the instructions call comments and rows untrusted.
 
 ### Changed
 
