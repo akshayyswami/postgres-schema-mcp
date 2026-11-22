@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- A README section on using the server in Claude Code: the `claude mcp add` commands, the SQL for a read-only role on your own database, the `PGSS_SCHEMAS` setting, and what to ask.
+
 ## [0.1.0] - 2026-11-20
 
 First release.

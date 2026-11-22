@@ -60,9 +60,69 @@ Then point your MCP client at it:
 }
 ```
 
-The package is also on PyPI, so a client can run it without a clone. Set `"command": "uvx"` and `"args": ["postgres-schema-mcp"]`, with the same `env`, and point `PGSS_DSN` at your own database through a role that can only `SELECT`.
+The package is also on PyPI, so a client can run it without a clone. Set `"command": "uvx"` and `"args": ["postgres-schema-mcp"]`, with the same `env`, and point `PGSS_DSN` at your own database through a role that can only `SELECT`, and set `PGSS_SCHEMAS`. [Use it in Claude Code](#use-it-in-claude-code) has the steps.
 
 stdio by default. `postgres-schema-mcp --http` serves Streamable HTTP on port 3000 instead. The credentials above belong to a local throwaway container holding public sample data. There are no real credentials in this repo.
+
+---
+
+## Use it in Claude Code
+
+### Add it once
+
+On the demo database from the Quickstart:
+
+```bash
+claude mcp add postgres-schema-mcp \
+  -e PGSS_DSN=postgresql://scout_ro:scout_ro_pw@localhost:55432/adventureworks \
+  -- uvx postgres-schema-mcp
+```
+
+On your own database:
+
+```bash
+claude mcp add postgres-schema-mcp \
+  -e PGSS_DSN=postgresql://scout_ro:change-me@localhost:5432/shop \
+  -e PGSS_SCHEMAS=public,billing \
+  -- uvx postgres-schema-mcp
+```
+
+Both run the PyPI package, so they need `uv` and no clone. The server is added for you in the current project only. Add `--scope user` to have it in every project. Do not use `--scope project` with a password in the DSN: it writes `.mcp.json`, which is meant to be committed.
+
+`claude mcp list` should show `✔ Connected`. The first start downloads the package. One cold check I ran reported a 30 second timeout and the next one connected, so run it again if the first fails.
+
+### Your own database
+
+Give the server a role that can read and nothing else. It is the layer that holds, so do not skip it. Run this as a superuser or the database owner, with your own names:
+
+```sql
+CREATE ROLE scout_ro LOGIN PASSWORD 'change-me' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+GRANT CONNECT ON DATABASE shop TO scout_ro;
+GRANT USAGE ON SCHEMA public, billing TO scout_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public, billing TO scout_ro;
+-- Tables that app_owner creates later are readable too:
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA public, billing GRANT SELECT ON TABLES TO scout_ro;
+-- What one connection can cost:
+ALTER ROLE scout_ro CONNECTION LIMIT 8;
+ALTER ROLE scout_ro SET temp_file_limit = '256MB';
+ALTER ROLE scout_ro SET work_mem = '16MB';
+```
+
+What this does not block: on a default Postgres any role can create temp tables and call `pg_sleep`, and before PostgreSQL 15 any role can create tables in the `public` schema. The AST guard refuses the first two. `init/20-grants.sql` shows how the demo database refuses them at the database too, but those revokes apply to `PUBLIC`, so they change what every role on that database can do. Use them only on a database that is dedicated to this.
+
+Set `PGSS_SCHEMAS` to the schemas to index, comma separated. The default is the five AdventureWorks schemas. Without it, `search_schema` returns no tables and no error, while `run_query` still works. It chooses what is indexed, not what the role can read.
+
+The server reads the schema once at start-up, so restart it after a migration.
+
+### Each time
+
+There is nothing to type. Ask the question in plain words and Claude uses the tools in the same loop every time: `search_schema` for the relevant tables, `describe_table` for one it needs by name, `explain_query` for anything large, then `run_query`. On the demo database, try:
+
+- Which sales orders had the highest total due in 2013?
+- What products were on each sales order, with quantities and unit prices?
+- Which employees have had their pay rate changed, and when?
+
+Claude Code may ask you to approve the tools the first time. Ask it to change data and `run_query` refuses with a message saying the server is read-only.
 
 ---
 
