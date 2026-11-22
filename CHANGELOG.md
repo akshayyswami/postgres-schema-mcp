@@ -6,7 +6,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Added
 
-- A README section on using the server in Claude Code: the `claude mcp add` commands, the SQL for a read-only role on your own database, the `PGSS_SCHEMAS` setting, and what to ask.
+- README sections for adding the server to Claude Code, Claude Desktop, Codex, Cursor and VS Code, for using it on your own database (with the SQL for a read-only role), a Configuration table with every setting, Troubleshooting and Privacy. Only Claude Code was run. The other clients follow their own documentation as read on 2026-11-22.
+- A test that fails when an environment variable the code reads has no row in the README's Configuration table.
+- A pull request template, and Dependabot for GitHub Actions and uv.
+
+### Fixed
+
+- On a database whose schemas are not the AdventureWorks default, `search_schema` returned `"tables": []` with no error. It now fails with a message that lists the schemas the role can read and the `PGSS_SCHEMAS` value to set, and the empty result is not remembered, so a restart or a grant is picked up. A misspelt schema in `PGSS_SCHEMAS` logs a warning.
+- The instructions sent to the model said the database was AdventureWorks with 68 tables, whatever it was connected to.
 
 ## [0.1.0] - 2026-11-20
 

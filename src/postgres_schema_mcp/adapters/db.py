@@ -213,6 +213,19 @@ LEFT JOIN pg_namespace tn ON tn.oid = tc.relnamespace
 WHERE con.contype IN ('p', 'f') AND sn.nspname = ANY(%(schemas)s)
 """
 
+# Every schema holding a table this role can read, so an empty index can say what to set.
+_READABLE_SCHEMAS_SQL = """
+SELECT DISTINCT n.nspname
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relkind = 'r'
+  AND n.nspname <> 'information_schema'
+  AND n.nspname NOT LIKE 'pg\\_%'
+  AND has_schema_privilege(n.oid, 'USAGE')
+  AND has_table_privilege(c.oid, 'SELECT')
+ORDER BY 1
+"""
+
 
 class Database:
     """Async connection pool, always connected as the read-only role."""
@@ -349,6 +362,12 @@ class Database:
                 "planner units, useful for comparing two queries against each other."
             ),
         )
+
+    async def readable_schemas(self) -> list[str]:
+        """Schemas that hold at least one table this role can read, system schemas excluded."""
+        async with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await cur.execute(_READABLE_SCHEMAS_SQL)
+            return [row[0] for row in await cur.fetchall()]
 
     async def introspect(self) -> list[TableDetail]:
         """Read the schema once. Called at startup to build the retrieval index."""

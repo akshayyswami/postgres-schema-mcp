@@ -22,6 +22,7 @@ model sees, so each says when to reach for the tool and what to do when it fails
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 
@@ -35,6 +36,7 @@ from mcp.types import ToolAnnotations
 # package is installed, so absolute imports resolve under both loaders.
 from postgres_schema_mcp.adapters.backends import make_index
 from postgres_schema_mcp.adapters.db import Database
+from postgres_schema_mcp.core.diagnostics import empty_index_message, missing_schemas_warning
 from postgres_schema_mcp.core.guard import BlockedQueryError, check_read_only
 from postgres_schema_mcp.core.retrieval import SchemaIndex, count_tokens, tokenizer_name
 from postgres_schema_mcp.core.types import (
@@ -48,8 +50,8 @@ from postgres_schema_mcp.core.types import (
 __all__ = ["main", "mcp"]
 
 INSTRUCTIONS = """\
-This server exposes a wide PostgreSQL schema (AdventureWorks: 68 tables across
-five schemas) to you by retrieval rather than by dumping it.
+This server exposes a PostgreSQL schema to you by retrieval rather than by
+dumping it.
 
 Start with search_schema. Do not ask for the whole schema; it does not fit
 usefully in context, and the tables you need are a small fraction of it.
@@ -93,6 +95,8 @@ mcp = MCPServer(
     },
 )
 
+log = logging.getLogger(__name__)
+
 _db: Database | None = None
 _index: SchemaIndex | None = None
 _lock = asyncio.Lock()
@@ -111,13 +115,30 @@ async def get_db() -> Database:
 
 
 async def get_index() -> SchemaIndex:
-    """Introspect and index the schema once, on first use."""
+    """Introspect and index the schema once, on first use.
+
+    An index with no tables is never kept and never returned. The default schemas are the
+    AdventureWorks ones, so on any other database an unset PGSS_SCHEMAS finds nothing, and
+    an empty answer to search_schema would read as "no relevant tables". It is a tool error
+    that names the fix instead, and the next call looks again, so a grant or a restart that
+    fixes the cause is picked up.
+    """
     global _index
     if _index is None:
         db = await get_db()
         async with _lock:
             if _index is None:
-                _index = make_index(await db.introspect())
+                tables = await db.introspect()
+                if not tables:
+                    raise ToolError(
+                        empty_index_message(db.settings.schemas, await db.readable_schemas())
+                    )
+                warning = missing_schemas_warning(
+                    db.settings.schemas, {t.schema_name for t in tables}
+                )
+                if warning:
+                    log.warning(warning)
+                _index = make_index(tables)
     return _index
 
 

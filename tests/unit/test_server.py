@@ -15,6 +15,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from postgres_schema_mcp import server
+from postgres_schema_mcp.adapters.db import DEFAULT_SCHEMAS, Settings
 from postgres_schema_mcp.core.retrieval import SchemaIndex
 from postgres_schema_mcp.core.types import QueryPlan, QueryResult, TableDetail
 
@@ -24,6 +25,8 @@ class FakeDatabase:
 
     def __init__(self, tables: list[TableDetail] | None = None) -> None:
         self.tables = tables or []
+        self.settings = Settings()
+        self.readable: list[str] = []
         self.open_calls = 0
         self.introspect_calls = 0
         self.statements: list[str] = []
@@ -36,6 +39,9 @@ class FakeDatabase:
     async def introspect(self) -> list[TableDetail]:
         self.introspect_calls += 1
         return self.tables
+
+    async def readable_schemas(self) -> list[str]:
+        return self.readable
 
     async def fetch_rows(self, sql: str, max_rows: int) -> QueryResult:
         self.statements.append(sql)
@@ -200,6 +206,55 @@ async def test_the_schema_is_introspected_once_and_indexed_once(cold_server: Fak
     assert first is second
     assert cold_server.introspect_calls == 1
     assert len(first.tables) == 68
+
+
+async def test_an_empty_index_is_a_tool_error_that_names_the_fix(cold_server: FakeDatabase) -> None:
+    """The default schemas are AdventureWorks, so a real database finds nothing until
+    PGSS_SCHEMAS is set. That must be an error the model can read, not an empty answer."""
+    cold_server.tables = []
+    cold_server.readable = ["billing", "public"]
+    with pytest.raises(ToolError, match=r"PGSS_SCHEMAS=billing,public"):
+        await server.search_schema("which customers placed orders")
+    with pytest.raises(ToolError, match="billing, public"):
+        await server.describe_table("public.orders")
+
+
+async def test_an_empty_index_says_what_to_grant_when_nothing_is_readable(
+    cold_server: FakeDatabase,
+) -> None:
+    cold_server.tables = []
+    with pytest.raises(ToolError, match="Grant it USAGE"):
+        await server.search_schema("anything")
+
+
+async def test_an_empty_index_is_not_remembered(cold_server: FakeDatabase) -> None:
+    full = cold_server.tables
+    cold_server.tables = []
+    for _ in range(2):
+        with pytest.raises(ToolError):
+            await server.get_index()
+    assert cold_server.introspect_calls == 2
+    cold_server.tables = full
+    assert len((await server.get_index()).tables) == 68
+
+
+async def test_a_misspelt_schema_is_warned_about_and_a_good_list_is_not(
+    cold_server: FakeDatabase, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("WARNING", logger="postgres_schema_mcp.server"):
+        await server.get_index()
+    assert caplog.text == ""
+
+    cold_server.settings = Settings(schemas=(*DEFAULT_SCHEMAS, "slaes"))
+    server._index = None
+    with caplog.at_level("WARNING", logger="postgres_schema_mcp.server"):
+        await server.get_index()
+    assert "slaes" in caplog.text
+    assert "person" not in caplog.text
+
+
+def test_the_instructions_do_not_claim_the_demo_database() -> None:
+    assert "AdventureWorks" not in server.INSTRUCTIONS
 
 
 def _record_run(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:

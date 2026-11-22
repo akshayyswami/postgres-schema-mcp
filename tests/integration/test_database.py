@@ -26,6 +26,24 @@ async def db() -> AsyncIterator[Database]:
         yield database
 
 
+async def test_readable_schemas_lists_each_schema_that_holds_a_readable_table(
+    db: Database,
+) -> None:
+    assert await db.readable_schemas() == [
+        "humanresources",
+        "person",
+        "production",
+        "purchasing",
+        "sales",
+    ]
+
+
+async def test_introspect_finds_nothing_in_a_schema_that_holds_only_views() -> None:
+    """The shape of a database whose schemas were not listed: schemas exist, no tables match."""
+    async with Database(Settings(schemas=("pe",))) as only_views:
+        assert await only_views.introspect() == []
+
+
 async def test_introspect_reads_every_table_with_columns_keys_and_ddl(db: Database) -> None:
     tables = await db.introspect()
     assert len(tables) == 68

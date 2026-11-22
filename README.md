@@ -60,17 +60,19 @@ Then point your MCP client at it:
 }
 ```
 
-The package is also on PyPI, so a client can run it without a clone. Set `"command": "uvx"` and `"args": ["postgres-schema-mcp"]`, with the same `env`, and point `PGSS_DSN` at your own database through a role that can only `SELECT`, and set `PGSS_SCHEMAS`. [Use it in Claude Code](#use-it-in-claude-code) has the steps.
+The package is also on PyPI, so a client can run it without a clone. Set `"command": "uvx"` and `"args": ["postgres-schema-mcp"]`, with the same `env`, and point `PGSS_DSN` at your own database through a role that can only `SELECT`, and set `PGSS_SCHEMAS`. [Add it to your client](#add-it-to-your-client) and [Your own database](#your-own-database) have the steps.
 
 stdio by default. `postgres-schema-mcp --http` serves Streamable HTTP on port 3000 instead. The credentials above belong to a local throwaway container holding public sample data. There are no real credentials in this repo.
 
 ---
 
-## Use it in Claude Code
+## Add it to your client
 
-### Add it once
+The server is a local command that talks over stdio, so every client needs the same three things: the command `uvx postgres-schema-mcp`, the environment variable `PGSS_DSN`, and on your own database `PGSS_SCHEMAS` (see [Your own database](#your-own-database)). Only Claude Code was run by me. The other snippets follow each client's own documentation as I read it on 2026-11-22, and each has a link, so check the page if a client has changed. Any other client that can start a stdio MCP server takes the same command, `args` and `env`.
 
-On the demo database from the Quickstart:
+The DSN below is the demo database from the Quickstart. Swap in your own.
+
+### Claude Code
 
 ```bash
 claude mcp add postgres-schema-mcp \
@@ -78,18 +80,93 @@ claude mcp add postgres-schema-mcp \
   -- uvx postgres-schema-mcp
 ```
 
-On your own database:
+The server is added for you in the current project only. Add `--scope user` to have it in every project. Do not use `--scope project` with a password in the DSN: it writes `.mcp.json`, which is meant to be committed. `claude mcp list` should show `✔ Connected`. The first start downloads the package. One cold check I ran reported a 30 second timeout and the next one connected, so run it again if the first fails.
+
+### Claude Desktop
+
+Open Settings, Developer, Edit Config. That opens `claude_desktop_config.json`: `~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows, `~/.config/Claude/` on Linux. Add the server, then quit and restart Claude Desktop ([docs](https://modelcontextprotocol.io/docs/develop/connect-local-servers)).
+
+```json
+{
+  "mcpServers": {
+    "postgres-schema-mcp": {
+      "command": "uvx",
+      "args": ["postgres-schema-mcp"],
+      "env": {
+        "PGSS_DSN": "postgresql://scout_ro:scout_ro_pw@localhost:55432/adventureworks"
+      }
+    }
+  }
+}
+```
+
+### Codex (CLI, desktop app and IDE extension)
 
 ```bash
-claude mcp add postgres-schema-mcp \
-  -e PGSS_DSN=postgresql://scout_ro:change-me@localhost:5432/shop \
-  -e PGSS_SCHEMAS=public,billing \
+codex mcp add postgres-schema-mcp \
+  --env PGSS_DSN=postgresql://scout_ro:scout_ro_pw@localhost:55432/adventureworks \
   -- uvx postgres-schema-mcp
 ```
 
-Both run the PyPI package, so they need `uv` and no clone. The server is added for you in the current project only. Add `--scope user` to have it in every project. Do not use `--scope project` with a password in the DSN: it writes `.mcp.json`, which is meant to be committed.
+Or put it in `~/.codex/config.toml`, or in `.codex/config.toml` for a trusted project ([docs](https://developers.openai.com/codex/mcp)). Codex waits 10 seconds for a server to start by default, and a first `uvx` run can take longer, so the example raises it:
 
-`claude mcp list` should show `✔ Connected`. The first start downloads the package. One cold check I ran reported a 30 second timeout and the next one connected, so run it again if the first fails.
+```toml
+[mcp_servers.postgres-schema-mcp]
+command = "uvx"
+args = ["postgres-schema-mcp"]
+startup_timeout_sec = 60
+
+[mcp_servers.postgres-schema-mcp.env]
+PGSS_DSN = "postgresql://scout_ro:scout_ro_pw@localhost:55432/adventureworks"
+```
+
+Check it with `codex mcp list`, or `/mcp` inside Codex.
+
+### Cursor
+
+Put this in `~/.cursor/mcp.json` for every project, or `.cursor/mcp.json` for one ([docs](https://cursor.com/docs/context/mcp)):
+
+```json
+{
+  "mcpServers": {
+    "postgres-schema-mcp": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["postgres-schema-mcp"],
+      "env": {
+        "PGSS_DSN": "postgresql://scout_ro:scout_ro_pw@localhost:55432/adventureworks"
+      }
+    }
+  }
+}
+```
+
+Cursor's docs let you write `"${env:PGSS_DSN}"` in `env` so the password stays out of the file. Server output is in the Output panel under "MCP Logs".
+
+### VS Code (GitHub Copilot)
+
+Put this in `.vscode/mcp.json` in the workspace, or run "MCP: Add Server" from the Command Palette ([docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)). The top-level key here is `servers`, not `mcpServers`:
+
+```json
+{
+  "servers": {
+    "postgres-schema-mcp": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["postgres-schema-mcp"],
+      "env": {
+        "PGSS_DSN": "postgresql://scout_ro:scout_ro_pw@localhost:55432/adventureworks"
+      }
+    }
+  }
+}
+```
+
+"MCP: List Servers" shows whether it connected. VS Code's docs also describe a newer Copilot location, `.mcp.json` at the workspace root with the `mcpServers` key, so try that if `.vscode/mcp.json` is not picked up.
+
+---
+
+## Use it
 
 ### Your own database
 
@@ -110,7 +187,7 @@ ALTER ROLE scout_ro SET work_mem = '16MB';
 
 What this does not block: on a default Postgres any role can create temp tables and call `pg_sleep`, and before PostgreSQL 15 any role can create tables in the `public` schema. The AST guard refuses the first two. `init/20-grants.sql` shows how the demo database refuses them at the database too, but those revokes apply to `PUBLIC`, so they change what every role on that database can do. Use them only on a database that is dedicated to this.
 
-Set `PGSS_SCHEMAS` to the schemas to index, comma separated. The default is the five AdventureWorks schemas. Without it, `search_schema` returns no tables and no error, while `run_query` still works. It chooses what is indexed, not what the role can read.
+Set `PGSS_SCHEMAS` to the schemas to index, comma separated, for example `PGSS_SCHEMAS=public,billing`. The default is the five AdventureWorks schemas, so on any other database the server finds no tables until you set it. It chooses what is indexed, not what the role can read.
 
 The server reads the schema once at start-up, so restart it after a migration.
 
@@ -122,7 +199,54 @@ There is nothing to type. Ask the question in plain words and Claude uses the to
 - What products were on each sales order, with quantities and unit prices?
 - Which employees have had their pay rate changed, and when?
 
-Claude Code may ask you to approve the tools the first time. Ask it to change data and `run_query` refuses with a message saying the server is read-only.
+Your client may ask you to approve the tools the first time. Ask it to change data and `run_query` refuses with a message saying the server is read-only.
+
+---
+
+## Configuration
+
+Every setting is an environment variable. The audit and a test in this repo fail if one the code reads is missing from this table.
+
+| Variable | Default | What it changes |
+|---|---|---|
+| `PGSS_DSN` | the demo database, `postgresql://scout_ro:scout_ro_pw@localhost:55432/adventureworks` | The database to connect to. Use a role that can only `SELECT` |
+| `PGSS_SCHEMAS` | `person,humanresources,production,purchasing,sales` | The schemas to index. It chooses what is indexed, not what the role can read |
+| `PGSS_STATEMENT_TIMEOUT_MS` | `10000` | Cancels a query that runs longer than this |
+| `PGSS_IDLE_TX_TIMEOUT_MS` | `10000` | Ends a session left idle inside a transaction |
+| `PGSS_MAX_ROWS_CAP` | `1000` | The most rows `run_query` returns, whatever `max_rows` asks for |
+| `PGSS_MAX_CELL_CHARS` | `2000` | A longer text value is cut, with a note of how much was dropped |
+| `PGSS_MAX_RESULT_BYTES` | `200000` | Cap on the JSON size of all rows from one query |
+| `PGSS_POOL_MIN` | `1` | Connections kept open |
+| `PGSS_POOL_MAX` | `4` | The most connections open at once |
+| `PGSS_TRANSPORT` | `stdio` | `stdio`, or `streamable-http` (the same as the `--http` flag) |
+| `PGSS_HOST` | `127.0.0.1` | The address the HTTP transport binds. A non-loopback address is refused unless `PGSS_ALLOW_REMOTE=1` |
+| `PGSS_PORT_HTTP` | `3000` | The port for the HTTP transport |
+| `PGSS_ALLOW_REMOTE` | unset | Set to `1` to allow a non-loopback bind, only behind a proxy that does the authentication |
+| `PGSS_RETRIEVAL_BACKEND` | `bm25` | `bm25`, or `titan` (needs the `bedrock` extra) |
+| `PGSS_TITAN_MODEL_ID` | `amazon.titan-embed-text-v2:0` | The embedding model when the backend is `titan` |
+| `AWS_REGION` | `us-east-1` | The Bedrock region when the backend is `titan` |
+
+---
+
+## Troubleshooting
+
+| What you see | Why | Fix |
+|---|---|---|
+| `search_schema` fails with "No tables were found in the indexed schemas" (version 0.1.0 returns `"tables": []` instead) | The default schemas are the AdventureWorks ones, and your database holds none of them | Set `PGSS_SCHEMAS` to the schemas that hold your tables. The message lists the ones the role can read |
+| The client says the server failed to connect, right after you added it | The first `uvx` run downloads the package and can take longer than the client waits | Run the check again. In Codex raise `startup_timeout_sec` |
+| `permission denied for table ...` | The role has no `SELECT` on that table, or no `USAGE` on its schema | Grant both, as in [Your own database](#your-own-database) |
+| `run_query` returns "Blocked: ..." | The guard refused a statement that is not a single read-only `SELECT` | Rewrite it as one `SELECT`. See the safety model below |
+| Tables you added are missing from the results | The schema is read once at start-up | Restart the server |
+
+---
+
+## Privacy
+
+The server connects to the database you give it, and it sends no telemetry. Table and column names, comments and the rows a query returns go to the model through your client, so they leave your machine for whatever model that client uses.
+
+Two downloads happen on first use, and neither carries anything from your database. `uvx` fetches the package from PyPI. The first time the server counts tokens, the `tiktoken` library downloads its `cl100k_base` vocabulary file from `openaipublic.blob.core.windows.net` and keeps it in the system temp folder (`TIKTOKEN_CACHE_DIR` changes where). If that download fails, token counts fall back to a rough estimate, and the tokenizer is named as approximate in the result.
+
+With `PGSS_RETRIEVAL_BACKEND=titan`, the text describing each table is also sent to Amazon Bedrock. The default, `bm25`, sends nothing.
 
 ---
 

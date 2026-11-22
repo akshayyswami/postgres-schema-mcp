@@ -41,6 +41,15 @@ async def test_search_then_describe_then_query() -> None:
     assert result.truncated is True
 
 
+async def test_schemas_that_hold_no_tables_say_what_to_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`pe` holds views only, so it stands in for a database the default schemas do not fit."""
+    monkeypatch.setenv("PGSS_SCHEMAS", "pe")
+    with pytest.raises(ToolError, match="PGSS_SCHEMAS=humanresources,person,production"):
+        await server.search_schema("which customers placed orders")
+
+
 async def test_explain_query_plans_a_join() -> None:
     plan = await server.explain_query(
         "SELECT h.salesorderid FROM sales.salesorderheader h "
