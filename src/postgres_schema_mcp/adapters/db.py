@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -35,6 +36,8 @@ from psycopg_pool import AsyncConnectionPool
 
 from ..core.ddl import render_ddl
 from ..core.types import ColumnInfo, ForeignKey, QueryPlan, QueryResult, TableDetail
+
+log = logging.getLogger(__name__)
 
 __all__ = ["Database", "Settings"]
 
@@ -213,9 +216,12 @@ LEFT JOIN pg_namespace tn ON tn.oid = tc.relnamespace
 WHERE con.contype IN ('p', 'f') AND sn.nspname = ANY(%(schemas)s)
 """
 
-# Every schema holding a table this role can read, so an empty index can say what to set.
+# Schemas holding a table this role can read, so an empty index can say what to set. Capped
+# at 51 (the message names 20), and plain-looking names sort first, so a schema with an odd
+# name cannot push the ordinary ones out of the answer. The regex matches `_PLAIN_NAME` in
+# core/diagnostics.py.
 _READABLE_SCHEMAS_SQL = """
-SELECT DISTINCT n.nspname
+SELECT n.nspname
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind = 'r'
@@ -223,7 +229,9 @@ WHERE c.relkind = 'r'
   AND n.nspname NOT LIKE 'pg\\_%'
   AND has_schema_privilege(n.oid, 'USAGE')
   AND has_table_privilege(c.oid, 'SELECT')
-ORDER BY 1
+GROUP BY n.nspname
+ORDER BY (n.nspname !~ '^[A-Za-z_][A-Za-z0-9_$-]{0,62}$'), n.nspname
+LIMIT 51
 """
 
 
@@ -363,11 +371,19 @@ class Database:
             ),
         )
 
-    async def readable_schemas(self) -> list[str]:
-        """Schemas that hold at least one table this role can read, system schemas excluded."""
-        async with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
-            await cur.execute(_READABLE_SCHEMAS_SQL)
-            return [row[0] for row in await cur.fetchall()]
+    async def readable_schemas(self) -> list[str] | None:
+        """Up to 51 schemas that hold a table this role can read, system schemas excluded.
+
+        Plain names come first. None when the look-up fails (a timeout, a dropped connection):
+        it only decorates an error message, so it must not replace that message.
+        """
+        try:
+            async with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+                await cur.execute(_READABLE_SCHEMAS_SQL)
+                return [row[0] for row in await cur.fetchall()]
+        except psycopg.Error as exc:
+            log.warning("Could not list the schemas this role can read: %s", type(exc).__name__)
+            return None
 
     async def introspect(self) -> list[TableDetail]:
         """Read the schema once. Called at startup to build the retrieval index."""

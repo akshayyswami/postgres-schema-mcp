@@ -170,7 +170,7 @@ Put this in `.vscode/mcp.json` in the workspace, or run "MCP: Add Server" from t
 
 ### Your own database
 
-Give the server a role that can read and nothing else. It is the layer that holds, so do not skip it. Run this as a superuser or the database owner, with your own names:
+Give the server a role that can read and nothing else. It is the layer that holds, so do not skip it. Run this as a superuser, with your own names. Creating a role needs `CREATEROLE` or superuser, and only a superuser (or, from PostgreSQL 15, a role granted `SET` on the setting) can set `temp_file_limit`, so the database owner is not enough. Run it with `psql -v ON_ERROR_STOP=1` so one failed line stops the rest instead of leaving a half-made role:
 
 ```sql
 CREATE ROLE scout_ro LOGIN PASSWORD 'change-me' NOSUPERUSER NOCREATEDB NOCREATEROLE;
@@ -184,6 +184,8 @@ ALTER ROLE scout_ro CONNECTION LIMIT 8;
 ALTER ROLE scout_ro SET temp_file_limit = '256MB';
 ALTER ROLE scout_ro SET work_mem = '16MB';
 ```
+
+`GRANT SELECT ON ALL TABLES` lets the model read every row of every table in those schemas, and the rows go to the model provider (see Privacy). If a schema also holds password hashes, tokens or other secrets, grant `SELECT` on the tables you want to expose instead, one by one.
 
 What this does not block: on a default Postgres any role can create temp tables and call `pg_sleep`, and before PostgreSQL 15 any role can create tables in the `public` schema. The AST guard refuses the first two. `init/20-grants.sql` shows how the demo database refuses them at the database too, but those revokes apply to `PUBLIC`, so they change what every role on that database can do. Use them only on a database that is dedicated to this.
 

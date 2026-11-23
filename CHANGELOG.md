@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-23
+
 ### Added
 
 - README sections for adding the server to Claude Code, Claude Desktop, Codex, Cursor and VS Code, for using it on your own database (with the SQL for a read-only role), a Configuration table with every setting, Troubleshooting and Privacy. Only Claude Code was run. The other clients follow their own documentation as read on 2026-11-22.
@@ -13,6 +15,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Fixed
 
 - On a database whose schemas are not the AdventureWorks default, `search_schema` returned `"tables": []` with no error. It now fails with a message that lists the schemas the role can read and the `PGSS_SCHEMAS` value to set, and the empty result is not remembered, so a restart or a grant is picked up. A misspelt schema in `PGSS_SCHEMAS` logs a warning.
+- That message repeats only schema names made of plain identifier characters, lists at most 20 and counts the rest, because a schema name can hold any text and the message goes to the model. If listing the schemas fails, the message says so.
+- The instructions sent to the model name schema, table and column names as untrusted text, and say so for error messages that list them.
+- README: the role SQL says it needs a superuser, not the database owner, and that `GRANT SELECT ON ALL TABLES` exposes every row to the model provider.
 - The instructions sent to the model said the database was AdventureWorks with 68 tables, whatever it was connected to.
 
 ## [0.1.0] - 2026-11-20
