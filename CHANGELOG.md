@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+
+- When the database cannot be reached, a tool now fails with "Could not connect to the database", which names `PGSS_DSN`, instead of raising the driver's exception as it was. The `mcp` SDK from 2.3.0 shows the model only "Error executing tool X" for such an exception, so the model would have had no hint. A schema read that fails gets the same treatment ("Could not read the schema from the database"). Both messages carry the exception's class name and never its text, because libpq repeats part of a malformed connection string, password included. Neither failure is remembered, so the next call connects again.
+
 ## [0.1.1] - 2026-11-23
 
 ### Added

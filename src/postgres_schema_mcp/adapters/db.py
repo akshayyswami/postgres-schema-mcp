@@ -39,7 +39,13 @@ from ..core.types import ColumnInfo, ForeignKey, QueryPlan, QueryResult, TableDe
 
 log = logging.getLogger(__name__)
 
-__all__ = ["Database", "Settings"]
+__all__ = ["DATABASE_ERRORS", "Database", "Settings"]
+
+# What a database that is down, unreachable, refusing the login or given a malformed DSN raises.
+# PoolTimeout and PoolClosed are psycopg.OperationalError, a malformed DSN is a
+# psycopg.ProgrammingError, and a refused socket or a failed lookup can surface as OSError.
+# Anything else is a bug in this server and is left to fail loudly.
+DATABASE_ERRORS = (psycopg.Error, OSError)
 
 DEFAULT_DSN = "postgresql://scout_ro:scout_ro_pw@localhost:55432/adventureworks"
 

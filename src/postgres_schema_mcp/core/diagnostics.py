@@ -5,7 +5,12 @@ from __future__ import annotations
 import re
 from collections.abc import Collection, Sequence
 
-__all__ = ["empty_index_message", "missing_schemas_warning"]
+__all__ = [
+    "catalog_failure_message",
+    "connect_failure_message",
+    "empty_index_message",
+    "missing_schemas_warning",
+]
 
 _EXAMPLE_SCHEMAS = 3
 _LISTED_SCHEMAS = 20
@@ -15,6 +20,30 @@ _LISTED_SCHEMAS = 20
 # ordinary identifier characters is repeated in it. The database query sorts these names
 # first, so a name that does not match cannot crowd out one that does.
 _PLAIN_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_$-]{0,62}")
+
+
+# The two messages below take the exception's class name and nothing else from it. The text of
+# a driver error can repeat part of the connection string, and libpq does that for a malformed
+# one, which holds the password. The class name is enough to tell a timeout from a bad DSN.
+
+
+def connect_failure_message(error_name: str) -> str:
+    """The database could not be reached, so nothing was run. What to check."""
+    return (
+        f"Could not connect to the database ({error_name}). Check that PGSS_DSN points at a "
+        "PostgreSQL server that is running and reachable from the machine this server runs on, "
+        "and that the role in it can log in. Nothing was run. The next call tries again, and "
+        "the server's log has the driver's own message."
+    )
+
+
+def catalog_failure_message(error_name: str) -> str:
+    """The connection worked, or dropped, while the schema was being read."""
+    return (
+        f"Could not read the schema from the database ({error_name}). Check that the database "
+        "is still running, that the role in PGSS_DSN can read the catalog, and that "
+        "PGSS_SCHEMAS names schemas it can use. The next call tries again."
+    )
 
 
 def empty_index_message(configured: Sequence[str], readable: Sequence[str] | None) -> str:
