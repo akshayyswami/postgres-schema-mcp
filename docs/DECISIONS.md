@@ -103,3 +103,11 @@ One entry per decision that changes architecture or scope. Newest first.
 - **Not caught:** anything that is not a database or socket error. A bug here should fail loudly, not read as "check your DSN". A test pins that.
 - **Not changed:** the first connect still waits up to 30 seconds before it gives up (`pool.open(wait=True, timeout=30)`), so the error arrives after that wait. A statement timeout during `run_query` and `explain_query` keeps its own message ("Query failed: ..."), which the tool descriptions already explain.
 - **Alternatives:** catch `Exception` (rejected: it hides our own bugs behind a connection message); repeat the driver's text (rejected: the DSN case above, and it names hosts); exit at start-up when the database is down (rejected for the same reason as in the empty-index decision: a client shows "failed to connect" and hides the message).
+
+## 2026-11-24: Leave the squash-merge commit that carries the account's public email
+
+- **Decision:** leave `f763d73` on `main` as it is. It is the squash merge of pull request 5.
+- **What happened:** GitHub authored the squash commit with the merging account's primary email, which is the address shown on that account's public profile, and not with the repo's noreply address. It also added a `Co-authored-by` trailer naming the original commit identity, which is the same person. Every other commit in this repository uses a noreply address.
+- **Why leave it:** the address is already public on the profile. Removing the commit would take a force-push of `main`, and that would not take the address out of what GitHub serves, because the old commit and the pull request page stay reachable by their links.
+- **Effect:** the repo audit's check that every commit uses a noreply email fails on this one commit. That failure is known and accepted. It is not a regression.
+- **Going forward:** a merge of a pull request that holds human commits passes `--author-email` with the noreply address. Dependabot pull requests are not affected, because their author stays the bot.
