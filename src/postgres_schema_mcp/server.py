@@ -35,8 +35,13 @@ from mcp.types import ToolAnnotations
 # fails with "attempted relative import with no known parent package". The
 # package is installed, so absolute imports resolve under both loaders.
 from postgres_schema_mcp.adapters.backends import make_index
-from postgres_schema_mcp.adapters.db import Database
-from postgres_schema_mcp.core.diagnostics import empty_index_message, missing_schemas_warning
+from postgres_schema_mcp.adapters.db import DATABASE_ERRORS, Database
+from postgres_schema_mcp.core.diagnostics import (
+    catalog_failure_message,
+    connect_failure_message,
+    empty_index_message,
+    missing_schemas_warning,
+)
 from postgres_schema_mcp.core.guard import BlockedQueryError, check_read_only
 from postgres_schema_mcp.core.retrieval import SchemaIndex, count_tokens, tokenizer_name
 from postgres_schema_mcp.core.types import (
@@ -104,13 +109,25 @@ _lock = asyncio.Lock()
 
 
 async def get_db() -> Database:
-    """Open the pool on first use and reuse it thereafter."""
+    """Open the pool on first use and reuse it thereafter.
+
+    A database that cannot be reached is a tool error that names PGSS_DSN. Left as it was
+    raised, the exception is not a ToolError, and a client on mcp 2.3.0 shows the model only
+    "Error executing tool X", with no hint to check the connection. Only the exception's class
+    name is repeated, never its text (see core/diagnostics.py). Nothing is kept on failure, so
+    the next call connects again.
+    """
     global _db
     if _db is None:
         async with _lock:
             if _db is None:
                 db = Database()
-                await db.open()
+                try:
+                    await db.open()
+                except DATABASE_ERRORS as exc:
+                    name = type(exc).__name__
+                    log.warning("Could not connect to the database: %s", name)
+                    raise ToolError(connect_failure_message(name)) from None
                 _db = db
     return _db
 
@@ -129,7 +146,12 @@ async def get_index() -> SchemaIndex:
         db = await get_db()
         async with _lock:
             if _index is None:
-                tables = await db.introspect()
+                try:
+                    tables = await db.introspect()
+                except DATABASE_ERRORS as exc:
+                    name = type(exc).__name__
+                    log.warning("Could not read the schema from the database: %s", name)
+                    raise ToolError(catalog_failure_message(name)) from None
                 if not tables:
                     raise ToolError(
                         empty_index_message(db.settings.schemas, await db.readable_schemas())

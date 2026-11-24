@@ -2,7 +2,28 @@
 
 from __future__ import annotations
 
-from postgres_schema_mcp.core.diagnostics import empty_index_message, missing_schemas_warning
+from postgres_schema_mcp.core.diagnostics import (
+    catalog_failure_message,
+    connect_failure_message,
+    empty_index_message,
+    missing_schemas_warning,
+)
+
+
+def test_a_connection_failure_names_the_setting_and_the_exception_class() -> None:
+    message = connect_failure_message("PoolTimeout")
+    assert "Could not connect to the database (PoolTimeout)" in message
+    assert "PGSS_DSN" in message
+    assert "reachable" in message
+    assert "again" in message
+
+
+def test_a_catalog_failure_says_the_connection_may_have_worked() -> None:
+    message = catalog_failure_message("OperationalError")
+    assert "Could not read the schema from the database (OperationalError)" in message
+    assert "PGSS_DSN" in message
+    assert "PGSS_SCHEMAS" in message
+    assert "again" in message
 
 
 def test_empty_index_names_the_configured_schemas_and_a_value_that_would_work() -> None:

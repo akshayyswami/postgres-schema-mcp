@@ -8,14 +8,18 @@ The same tools run against a live database in tests/integration/test_server_live
 from __future__ import annotations
 
 import asyncio
+import socket
 import sys
+from collections.abc import Awaitable, Callable
 from typing import Any
 
+import psycopg
+import psycopg_pool
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from postgres_schema_mcp import server
-from postgres_schema_mcp.adapters.db import DEFAULT_SCHEMAS, Settings
+from postgres_schema_mcp.adapters.db import DATABASE_ERRORS, DEFAULT_SCHEMAS, Settings
 from postgres_schema_mcp.core.retrieval import SchemaIndex
 from postgres_schema_mcp.core.types import QueryPlan, QueryResult, TableDetail
 
@@ -31,13 +35,19 @@ class FakeDatabase:
         self.introspect_calls = 0
         self.statements: list[str] = []
         self.error: Exception | None = None
+        self.open_error: Exception | None = None
+        self.introspect_error: Exception | None = None
 
     async def open(self) -> None:
         self.open_calls += 1
         await asyncio.sleep(0)  # yield, so concurrent callers really do interleave
+        if self.open_error:
+            raise self.open_error
 
     async def introspect(self) -> list[TableDetail]:
         self.introspect_calls += 1
+        if self.introspect_error:
+            raise self.introspect_error
         return self.tables
 
     async def readable_schemas(self) -> list[str] | None:
@@ -269,6 +279,103 @@ async def test_a_misspelt_schema_is_warned_about_and_a_good_list_is_not(
         await server.get_index()
     assert "slaes" in caplog.text
     assert "person" not in caplog.text
+
+
+# --- a database that cannot be reached is an error the model can read and act on ---
+#
+# mcp 2.3.0 sends the model only "Error executing tool X" for an exception that is not a
+# ToolError, so a bare PoolTimeout used to arrive as no reason at all.
+
+TOOL_CALLS: dict[str, Callable[[], Awaitable[object]]] = {
+    "search_schema": lambda: server.search_schema("which customers placed orders"),
+    "describe_table": lambda: server.describe_table("sales.salesorderheader"),
+    "explain_query": lambda: server.explain_query("SELECT 1"),
+    "run_query": lambda: server.run_query("SELECT 1"),
+}
+
+
+@pytest.mark.parametrize("tool", TOOL_CALLS)
+async def test_an_unreachable_database_is_a_tool_error_that_names_the_fix(
+    cold_server: FakeDatabase, tool: str
+) -> None:
+    cold_server.open_error = psycopg_pool.PoolTimeout("pool initialization incomplete")
+    with pytest.raises(ToolError) as caught:
+        await TOOL_CALLS[tool]()
+    assert "Could not connect to the database" in str(caught.value)
+    assert "PGSS_DSN" in str(caught.value)
+    assert cold_server.statements == []
+
+
+async def test_the_error_names_the_exception_class_and_not_its_text(
+    cold_server: FakeDatabase, caplog: pytest.LogCaptureFixture
+) -> None:
+    """libpq repeats part of a malformed connection string in its error, and that string
+    holds the password. Neither the message nor the log may carry the exception's text."""
+    cold_server.open_error = psycopg.ProgrammingError(
+        'missing "=" after "postgresql://scout:hunter2@db.internal" in connection info string'
+    )
+    with (
+        caplog.at_level("WARNING", logger="postgres_schema_mcp.server"),
+        pytest.raises(ToolError) as caught,
+    ):
+        await server.search_schema("anything")
+    assert "ProgrammingError" in str(caught.value)
+    assert caught.value.__cause__ is None
+    for leaked in ("hunter2", "db.internal"):
+        assert leaked not in str(caught.value)
+        assert leaked not in caplog.text
+    assert "ProgrammingError" in caplog.text
+
+
+async def test_a_failed_connection_is_not_remembered(cold_server: FakeDatabase) -> None:
+    cold_server.open_error = psycopg_pool.PoolTimeout("pool initialization incomplete")
+    for _ in range(2):
+        with pytest.raises(ToolError):
+            await server.get_db()
+    assert server._db is None
+    assert cold_server.open_calls == 2
+    cold_server.open_error = None
+    await server.get_db()
+    assert cold_server.open_calls == 3
+    assert (await server.search_schema("which customers placed orders")).tables
+
+
+async def test_a_failed_schema_read_is_a_tool_error_and_is_not_remembered(
+    cold_server: FakeDatabase,
+) -> None:
+    cold_server.introspect_error = psycopg.OperationalError("server closed the connection")
+    with pytest.raises(ToolError, match=r"Could not read the schema.*OperationalError") as caught:
+        await server.search_schema("which customers placed orders")
+    assert "PGSS_DSN" in str(caught.value)
+    assert "closed the connection" not in str(caught.value)
+    cold_server.introspect_error = None
+    assert len((await server.get_index()).tables) == 68
+    assert cold_server.introspect_calls == 2
+
+
+async def test_a_bug_in_this_server_is_not_dressed_up_as_a_database_problem(
+    cold_server: FakeDatabase,
+) -> None:
+    cold_server.introspect_error = RuntimeError("index out of range")
+    with pytest.raises(RuntimeError, match="index out of range"):
+        await server.search_schema("anything")
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        psycopg_pool.PoolTimeout("t"),
+        psycopg_pool.PoolClosed("c"),
+        psycopg.OperationalError("down"),
+        psycopg.ProgrammingError("bad dsn"),
+        ConnectionRefusedError(),
+        socket.gaierror("no such host"),
+        TimeoutError(),
+    ],
+    ids=lambda e: type(e).__name__,
+)
+def test_what_counts_as_a_database_problem(error: Exception) -> None:
+    assert isinstance(error, DATABASE_ERRORS)
 
 
 def test_the_instructions_do_not_claim_the_demo_database() -> None:
