@@ -24,7 +24,9 @@ _PLAIN_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_$-]{0,62}")
 
 # The two messages below take the exception's class name and nothing else from it. The text of
 # a driver error can repeat part of the connection string, and libpq does that for a malformed
-# one, which holds the password. The class name is enough to tell a timeout from a bad DSN.
+# one, which holds the password. The class name is a hint, not a diagnosis: a refused connection,
+# a wrong password and a malformed DSN all come out of the pool as PoolTimeout. The driver's own
+# message reaches the server's log through psycopg_pool, never through the tool.
 
 
 def connect_failure_message(error_name: str) -> str:

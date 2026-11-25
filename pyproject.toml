@@ -1,6 +1,6 @@
 [project]
 name = "postgres-schema-mcp"
-version = "0.1.1"
+version = "0.1.2"
 description = "An MCP server that retrieves the relevant slice of a wide Postgres schema instead of dumping all of it, with read-only enforced in three layers."
 readme = "README.md"
 license = "MIT"

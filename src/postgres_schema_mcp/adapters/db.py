@@ -42,8 +42,10 @@ log = logging.getLogger(__name__)
 __all__ = ["DATABASE_ERRORS", "Database", "Settings"]
 
 # What a database that is down, unreachable, refusing the login or given a malformed DSN raises.
-# PoolTimeout and PoolClosed are psycopg.OperationalError, a malformed DSN is a
-# psycopg.ProgrammingError, and a refused socket or a failed lookup can surface as OSError.
+# PoolTimeout and PoolClosed are psycopg.OperationalError. The pool swallows a failed connect in
+# its worker, so a refused connection, a wrong password and a malformed DSN all arrive as
+# PoolTimeout after the wait; psycopg.ProgrammingError and OSError cover a failure raised
+# directly, such as an unparsable DSN or a failed lookup.
 # Anything else is a bug in this server and is left to fail loudly.
 DATABASE_ERRORS = (psycopg.Error, OSError)
 

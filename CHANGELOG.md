@@ -4,6 +4,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-25
+
+### Changed
+
+- The `mcp` SDK pin moves from 2.0.0 to 2.3.0. The protocol version, the tool list and schemas, the tool annotations, the instructions and the guard's refusal text are the same on both. The one difference a client can see is the error text below, which is why the fix that follows ships with the bump.
+- The locked `boto3` moves to 1.44.9. It is only used by the optional `bedrock` extra, whose requirement (`boto3>=1.35`) is unchanged.
+
 ### Fixed
 
 - When the database cannot be reached, a tool now fails with "Could not connect to the database", which names `PGSS_DSN`, instead of raising the driver's exception as it was. The `mcp` SDK from 2.3.0 shows the model only "Error executing tool X" for such an exception, so the model would have had no hint. A schema read that fails gets the same treatment ("Could not read the schema from the database"). Both messages carry the exception's class name and never its text, because libpq repeats part of a malformed connection string, password included. Neither failure is remembered, so the next call connects again.

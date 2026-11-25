@@ -89,7 +89,7 @@ READ_ONLY = ToolAnnotations(
 
 mcp = MCPServer(
     "postgres-schema-mcp",
-    version="0.1.1",
+    version="0.1.2",
     instructions=INSTRUCTIONS,
     # Honest hints. The tool list is derived from this server's own code, so it
     # is stable for the life of the process and identical for every caller:
